@@ -1,3 +1,5 @@
 pyenv/
 *.sh
 personal/
+.venv
+.vscode/
