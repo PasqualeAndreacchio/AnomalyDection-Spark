@@ -9,6 +9,7 @@ sudo rm -rf /opt/spark-tmp/*
 for slave in slave-1 slave-2 slave-3; do
   echo "Emptying $slave..."
   ssh $slave "rm -rf /usr/local/spark/work/*"          # old Spark jobs
+  ssh $slave "sudo rm -rf /opt/spark-tmp/*"            # /opt temp files on worker
   ssh $slave "rm -rf ~/.ivy2.5.2/jars/* ~/.ivy2.5.2/cache/*"   # cache JAR Ivy 
   ssh $slave "sudo rm -rf /tmp/spark-*"                # tmp Spark
 done
