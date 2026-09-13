@@ -445,6 +445,12 @@ def main():
         # ----------------------------------------------------------------------
         df_anomaly1_saved, df_hourly_freq_saved = None, None
         for r in range(args.repeats):
+            # Clean up cache from previous repeat BEFORE new computation
+            # to prevent Spark from serving stale results via DAG deduplication
+            if r > 0 and df_anomaly1_saved is not None:
+                df_anomaly1_saved.unpersist()
+                df_hourly_freq_saved.unpersist()
+
             start_stage = get_current_max_stage(app_id)
             t0 = time.perf_counter()
             
@@ -458,11 +464,6 @@ def main():
             
             t1 = time.perf_counter()
             wall_time = t1 - t0
-            
-            # Clean up cache from previous repeats to avoid memory leaks
-            if r > 0 and df_anomaly1_saved is not None:
-                df_anomaly1_saved.unpersist()
-                df_hourly_freq_saved.unpersist()
             
             df_anomaly1_saved = df_anomaly1
             df_hourly_freq_saved = df_hourly_frequency
@@ -491,6 +492,11 @@ def main():
         # ----------------------------------------------------------------------
         df_joined_saved, sensor_codes_saved = None, None
         for r in range(args.repeats):
+            # Clean up cache from previous repeat BEFORE new computation
+            # to prevent Spark from serving stale results via DAG deduplication
+            if r > 0 and df_joined_saved is not None:
+                df_joined_saved.unpersist()
+
             start_stage = get_current_max_stage(app_id)
             t0 = time.perf_counter()
             
@@ -508,10 +514,6 @@ def main():
             
             t1 = time.perf_counter()
             wall_time = t1 - t0
-            
-            # Clean up cache from previous repeats to avoid memory leaks
-            if r > 0 and df_joined_saved is not None:
-                df_joined_saved.unpersist()
             
             df_joined_saved = df_joined
             sensor_codes_saved = sensor_codes

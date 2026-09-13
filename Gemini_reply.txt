@@ -1,0 +1,45 @@
+The issue with the efficiency—which drops significantly when scaling up to 6 cores—is caused by a hardcoded configuration for the number of shuffle partitions.
+
+In benchmark_suite.py (line 389), the Spark session is initialized for the scaling test like this:
+
+python
+spark = get_spark_session(cores_max=n_cores, shuffle_partitions=12)
+Why this breaks efficiency: Because shuffle_partitions is locked at 12, when you run with 6 cores, Spark creates exactly 12 tasks during a shuffle. This means each core gets precisely 2 tasks (12 / 6 = 2). In distributed systems, data is rarely perfectly uniform (data skew). If one of those 12 tasks happens to process slightly more data than the others, the core handling it will take longer. The other 5 cores will quickly finish their 2 tasks and then sit completely idle waiting for that last task to finish. Because you only have 2 tasks per core, Spark has no "extra" tasks to give to the idle cores to keep them busy, which plummets your parallel efficiency.
+
+The Solution: To achieve good load balancing and strong scaling, you need a higher task granularity so that fast cores can pick up more tasks while slow cores finish heavy ones. The general rule of thumb is to have 3x to 4x as many partitions as you have cores.
+
+I have edited your 
+
+benchmark_suite.py
+ file to dynamically scale the shuffle partitions based on the number of cores being tested:
+
+python
+# Using a multiple of n_cores (e.g. 4x) ensures tasks are evenly distributed, avoiding idle cores
+spark = get_spark_session(cores_max=n_cores, shuffle_partitions=n_cores * 4)
+If you re-run the benchmark, you should see the efficiency for 4 and 6 cores stay much closer to 1.0!
+
+4:19 PM
+Ok, but how could the efficiency by higher than 1 as showed in the plots? 
+4:26 PM
+An efficiency higher than 1.0 (or 100%) indicates Super-linear Speedup. While it sounds impossible (how can doubling the cores make it more than twice as fast?), it is actually a well-known phenomenon in distributed computing and benchmarking.
+
+In your specific Spark setup, there are two primary reasons this is happening, and your own data proves the first one!
+
+1. The JVM Garbage Collection (GC) Cliff
+When you run heavy data processing on just 1 core, that single JVM is churning through massive amounts of data, creating millions of temporary Java objects. This creates immense memory pressure, forcing Spark to trigger long "Stop-the-World" Garbage Collection (GC) pauses. When you move to 2 cores, the memory pressure per core is cut in half. Because GC overhead scales non-linearly, halving the memory pressure can reduce GC time by 90% or more.
+
+If we look back at the benchmark_summary.csv I checked earlier for Task 5C:
+
+1 Core: gc_time_mean = 0.62 seconds
+2 Cores: gc_time_mean = 0.03 seconds (A massive 94% drop!)
+Because the 1-core baseline was being severely penalized by Garbage Collection, adding a second core removed that penalty entirely, giving you a speedup that is "better than perfect".
+
+2. CPU Cache Effects
+Modern CPUs have very fast L2/L3 caches. If your 1-core task has to process a partition of data that is 50MB, but the CPU cache is only 30MB, the CPU constantly has to fetch data from the slower main RAM (Cache Misses). When you switch to 2 cores, the data is split into 25MB chunks per core. Suddenly, the entire working dataset for that task fits perfectly inside the ultra-fast CPU cache. The CPU no longer has to wait for RAM, and the processing speed skyrockets, resulting in super-linear efficiency.
+
+3. Disk Spilling (Memory Limits)
+Similar to the CPU cache, if your 1-core executor (with a strict 2GB limit) has to spill intermediate shuffle data to the hard drive because it ran out of execution memory, it takes a massive performance hit. Moving to 2 or 4 cores distributes the data. If the smaller data chunks no longer require disk spilling, you immediately bypass the disk I/O bottleneck, resulting in an efficiency spike > 1.0.
+
+TL;DR: Your 1-core baseline is essentially "struggling" with memory pressure and Garbage Collection. When you add more cores, the workload becomes light enough that those bottlenecks disappear completely, resulting in super-linear efficiency!
+
+4:25 PM
