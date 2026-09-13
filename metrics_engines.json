@@ -1,0 +1,78 @@
+{
+    "metric_groups": {
+        "temperatures": {
+            "S41": "External Temp",
+            "S39": "Utility Water IN",
+            "S40": "Utility Water OUT",
+            "S49": "Source Water IN",
+            "S50": "Source Water OUT",
+            "S45": "Free-Cool Water Temp",
+            "S46": "Recovery Water IN",
+            "S47": "Recovery Water OUT"
+        },
+        "pressures": {
+            "S100": "Suction Press Cool C1",
+            "S101": "Suction Press Heat C1",
+            "S102": "Discharge Press C1",
+            "S157": "Suction Press Cool C2",
+            "S158": "Suction Press Heat C2",
+            "S159": "Discharge Press C2"
+        },
+        "capacities": {
+            "S125": "Capacity Circ 1",
+            "S181": "Capacity Circ 2",
+            "S126": "Pressure Ratio C1",
+            "S43": "Demand Limit"
+        },
+        "discharge_temps": {
+            "S109": "Discharge Temp C1,1",
+            "S110": "Discharge Temp C2,1",
+            "S165": "Discharge Temp C1,2",
+            "S166": "Discharge Temp C2,2",
+            "S106": "Source Inlet Temp C1",
+            "S107": "Liquid Temp C1",
+            "S108": "Source Temp OUT C1",
+            "S163": "Source Temp IN C2",
+            "S164": "Liquid Temp C2"
+        },
+        "superheat_eev": {
+            "S81": "SH PID1 C1",
+            "S83": "SH PID2 C1",
+            "S86": "EEV Pos PID2 C1",
+            "S90": "EEV Pos PID1 C1",
+            "S138": "SH PID1 C2",
+            "S140": "SH PID2 C2",
+            "S143": "SH circ2 PID3"
+        },
+        "signals_valves": {
+            "S19": "Source Inverter",
+            "S37": "Utility Inverter",
+            "S69": "Free-Cool Valve Sig",
+            "S70": "Recovery Pump Sig",
+            "S122": "Sig Inv Fan C1",
+            "S178": "Sig Inv Fan C2",
+            "S42": "Water Reset"
+        },
+        "power_energy": {
+            "E1": "Active Power",
+            "E2": "Reactive Power"
+        },
+        "subcooling_misc": {
+            "S124": "Subcooling C1",
+            "S180": "Subcooling C2",
+            "S94": "EEV Pos PID3 C1",
+            "S97": "SH PID3 C1",
+            "S128": "Chiller Valve C1",
+            "S129": "Recovery Valve C1",
+            "S147": "Defrost Mode C1",
+            "S151": "C1 Mode",
+            "S154": "Set-Point SH PID1 C2"
+        }
+    },
+    "engine_labels": {
+        "S117": "Status Comp 1,1",
+        "S118": "Status Comp 2,1",
+        "S169": "Status Comp 1,2",
+        "S170": "Status Comp 2,2"
+    }
+}

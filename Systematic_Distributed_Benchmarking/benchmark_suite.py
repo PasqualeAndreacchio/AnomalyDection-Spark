@@ -27,6 +27,7 @@ import pyspark.sql.functions as sf
 from pyspark.sql import Window
 from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.classification import RandomForestClassifier as SparkRF
+from pyspark.sql.types import IntegerType
 
 
 def get_spark_session(app_name="MAPD_Benchmark", cores_max=6, shuffle_partitions=12):
@@ -243,6 +244,105 @@ def run_task4_distributed_mllib(spark, df_filled):
     df_train.unpersist()
     return num_trees
 
+# ANOMALY DETECTION 1 
+
+def run_switch_counts(df_aggregated, target_metrics):
+        
+    df_anomaly1 = df_aggregated.withColumn(
+        "hour_bucket", 
+        sf.date_trunc("hour", sf.col("timestamp_bucket"))
+    )
+
+    df_grouped = df_anomaly1.groupBy("hour_bucket", "hwid", "metric").agg(
+        sf.collect_list(
+            sf.struct("timestamp_bucket", "aggregated_value")
+        ).alias("time_series")
+    )
+
+    # Sort the 60-minute array chronologically 
+    df_sorted = df_grouped.withColumn(
+        "time_series_sorted", 
+        sf.array_sort("time_series")
+    )
+
+    # UDF to count the switches in that small list
+    def count_switches(time_series):
+        if not time_series or len(time_series) < 2:
+            return 0
+        switches = 0
+        # Iterate through the minutes in the hour
+        for i in range(1, len(time_series)):
+            # Compare current minute's value to the previous minute's value
+            if time_series[i].aggregated_value != time_series[i-1].aggregated_value:
+                switches += 1
+        return switches
+
+    # Register the Python function as a PySpark UDF
+    count_switches_udf = sf.udf(count_switches, IntegerType())
+
+    df_hourly_frequency = df_sorted.withColumn(
+        "total_state_switches", 
+        sf.when(
+            sf.col("metric").isin(target_metrics), 
+            count_switches_udf(sf.col("time_series_sorted"))
+        ).otherwise(sf.lit(None))
+    ).drop("time_series_sorted", "time_series") # Clean up the temporary columns
+
+    return df_anomaly1, df_hourly_frequency
+
+def run_group_and_join(metrics_json, SELECTED_GROUP, df_hourly_frequency, df_anomaly1):
+
+    # Retrieve the selected sensor group 
+    metric_groups = metrics_json["metric_groups"]
+    selected_metrics = metric_groups[SELECTED_GROUP]        # dict {code: label}
+    sensor_codes     = list(selected_metrics.keys())        # Selects the metrics identifier
+    target_metrics = list(
+        metrics_json["engine_labels"].keys()
+    ) 
+
+    print(f"Correlating each engine against group '{SELECTED_GROUP}':")
+    print(f"  Sensors: {sensor_codes}\n")
+
+    # Pivot the engine switches: one column per engine 
+    df_engine_wide = (
+        df_hourly_frequency
+        .filter(sf.col("metric").isin(target_metrics))         # Keep only the engines metrics
+        .groupBy("hour_bucket", "hwid")                     # Group data by device and hour bucket
+        .pivot("metric", target_metrics)                      # Creates a column for each engine metric (pivot)
+        .agg(sf.first("total_state_switches"))               # This is only intended to return a value instead of a column
+    )
+
+    # Pivot the selected sensors: one column per sensor 
+    df_sensors_wide = (
+        df_anomaly1
+        .filter(sf.col("metric").isin(sensor_codes))     # Selects the group of metrics I want to correlate
+        .groupBy("hour_bucket", "hwid")
+        .pivot("metric", sensor_codes)       # Creates a column for each selected metric (pivot)
+        .agg(sf.avg("aggregated_value"))      # The metric value is calculated as an average (all continous)
+    )
+
+    # Join engine switches with sensor values 
+    df_joined = df_engine_wide.join(
+        df_sensors_wide,
+        on=["hour_bucket", "hwid"],
+        how="inner"
+    )
+
+    return df_joined, selected_metrics, sensor_codes
+
+def run_correlation(df_joined, sensor_codes, target_metrics):
+
+    # Contruct the pyspark correlation expressions. With the for cycles I can construct every possible combination 
+    corr_exprs = []
+    for eng in target_metrics:
+        for s in sensor_codes:
+            alias = f"corr_{eng}_vs_{s}"
+            corr_exprs.append(sf.corr(eng, s).alias(alias))
+
+    # Apply the expressions
+    df_correlation = df_joined.groupBy("hwid").agg(*corr_exprs)
+
+    return df_correlation
 
 # ==============================================================================
 # MAIN BENCHMARK RUNNER
@@ -253,13 +353,26 @@ def main():
     parser.add_argument("--cores", nargs="+", type=int, default=[1, 2, 4, 6], help="List of core allocations to test")
     parser.add_argument("--repeats", type=int, default=2, help="Number of repetitions per benchmark")
     parser.add_argument("--shuffle-test", action="store_true", default=True, help="Test shuffle partitions (6, 12, 32, 200)")
-    parser.add_argument("--output-dir", type=str, default="/home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking", help="Output directory")
+    parser.add_argument("--output-dir", type=str, default="Systematic_Distributed_Benchmarking", help="Output directory")
     args = parser.parse_args()
 
     s3_parquet_path = "s3a://MAPDB-Group5/data_parquet"
     output_dir = args.output_dir
     plots_dir = os.path.join(output_dir, "benchmark_plots")
     os.makedirs(plots_dir, exist_ok=True)
+
+    # ------------------------------------------------------------------
+    # Load the metrics/engines JSON configuration
+    # ------------------------------------------------------------------
+    json_path_config = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "metrics_engines.json"
+    )
+    with open(json_path_config, "r") as f:
+        metrics_json = json.load(f)
+
+    target_metrics = list(metrics_json["engine_labels"].keys())  # ["S117","S118","S169","S170"]
+    SELECTED_GROUP = "temperatures"  # sensor group to correlate against engines
 
     print("=" * 80)
     print("STARTING SYSTEMATIC DISTRIBUTED SPARK BENCHMARK (TASK 3.3.3)")
@@ -284,20 +397,76 @@ def main():
         except Exception as e:
             print(f"    Warm-up error: {e}", flush=True)
 
+        # ------------------------------------------------------------------
+        # Build df_aggregated: 1-minute temporal resampling of raw parquet
+        # This mirrors the notebook preprocessing (cells 4-6) and is the
+        # input DataFrame that Tasks 5A/5B/5C operate on.
+        # ------------------------------------------------------------------
+        print("    Building df_aggregated (1-min resampling)...", flush=True)
+
+        continuous_metrics = [
+            'E1', 'E2',
+            'S19', 'S37', 'S39', 'S40', 'S41', 'S42', 'S43', 'S45', 'S46', 'S47', 'S49', 'S50',
+            'S69', 'S70', 'S71', 'S72', 'S80', 'S81', 'S83', 'S86', 'S90', 'S94', 'S97',
+            'S100', 'S101', 'S102', 'S106', 'S107', 'S108', 'S109', 'S110',
+            'S122', 'S124', 'S125', 'S126', 'S128', 'S129',
+            'S137', 'S138', 'S140', 'S143', 'S147',
+            'S151', 'S154', 'S157', 'S158', 'S159',
+            'S163', 'S164', 'S165', 'S166', 'S167',
+            'S178', 'S180', 'S181'
+        ]
+
+        df_spark = spark.read.parquet(s3_parquet_path)
+
+        # Convert UNIX-millis timestamp and bucket to 1-minute intervals
+        df_spark = df_spark.withColumn(
+            "when", sf.timestamp_millis(sf.col("when").cast("long"))
+        ).withColumn(
+            "timestamp_bucket", sf.date_trunc("minute", "when")
+        )
+
+        # Aggregate: mean for continuous metrics, max for discrete/status metrics
+        df_aggregated = (
+            df_spark.groupBy("timestamp_bucket", "hwid", "metric")
+            .agg(
+                sf.coalesce(
+                    sf.mean(sf.when(sf.col("metric").isin(continuous_metrics), sf.col("value"))),
+                    sf.max(sf.col("value"))
+                ).alias("aggregated_value")
+            )
+        ).cache()
+
+        # Materialise the cache so that subsequent tasks benchmark only their own logic
+        df_aggregated.count()
+        print("    df_aggregated cached and materialised.", flush=True)
+
         # ----------------------------------------------------------------------
-        # TEST 1A: MAP-BOUND (BITWISE MASK 224)
+        # TEST 5A: SWITCH COUNTS (ANOMALY DETECTION 1)
         # ----------------------------------------------------------------------
+        df_anomaly1_saved, df_hourly_freq_saved = None, None
         for r in range(args.repeats):
             start_stage = get_current_max_stage(app_id)
             t0 = time.perf_counter()
-            res = run_task1_map_bound(spark, s3_parquet_path, mode="bitwise")
+            
+            # Execute the function
+            df_anomaly1, df_hourly_frequency = run_switch_counts(df_aggregated, target_metrics)
+            
+            # Cache and force action to materialize the DataFrames
+            df_anomaly1.cache()
+            df_hourly_frequency.cache()
+            res = df_hourly_frequency.count() 
+            
             t1 = time.perf_counter()
             wall_time = t1 - t0
+            
+            df_anomaly1_saved = df_anomaly1
+            df_hourly_freq_saved = df_hourly_frequency
+            
             metrics = get_stage_metrics(app_id, min_stage_id=start_stage)
 
             rec = {
-                "task_name": "Task 1: Map-Bound (Bitwise 224)",
-                "task_category": "Map / Narrow",
+                "task_name": "Task 5A: Switch Counts",
+                "task_category": "Analytics / UDF",
                 "cores": n_cores,
                 "repeat": r + 1,
                 "wall_time_sec": wall_time,
@@ -310,22 +479,39 @@ def main():
                 "result_count": res,
             }
             benchmark_records.append(rec)
-            print(f"    [Bitwise | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | GC: {rec['gc_time_sec']:.3f}s | Result: {res}", flush=True)
+            print(f"    [Switches| Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | Result: {res}", flush=True)
 
         # ----------------------------------------------------------------------
-        # TEST 1B: MAP-BOUND (STRING CONVERSION & SUBSTRING)
+        # TEST 5B: GROUP AND JOIN
         # ----------------------------------------------------------------------
+        df_joined_saved, sensor_codes_saved = None, None
         for r in range(args.repeats):
             start_stage = get_current_max_stage(app_id)
             t0 = time.perf_counter()
-            res = run_task1_map_bound(spark, s3_parquet_path, mode="string")
+            
+            # Execute using the cached outputs from Task 5A
+            df_joined, selected_metrics, sensor_codes = run_group_and_join(
+                metrics_json, 
+                SELECTED_GROUP, 
+                df_hourly_freq_saved, 
+                df_anomaly1_saved
+            )
+            
+            # Cache and force action
+            df_joined.cache()
+            res = df_joined.count()
+            
             t1 = time.perf_counter()
             wall_time = t1 - t0
+            
+            df_joined_saved = df_joined
+            sensor_codes_saved = sensor_codes
+            
             metrics = get_stage_metrics(app_id, min_stage_id=start_stage)
 
             rec = {
-                "task_name": "Task 1: Map-Bound (String Substring)",
-                "task_category": "Map / Narrow",
+                "task_name": "Task 5B: Group and Join",
+                "task_category": "Analytics / Pivot-Join",
                 "cores": n_cores,
                 "repeat": r + 1,
                 "wall_time_sec": wall_time,
@@ -338,24 +524,28 @@ def main():
                 "result_count": res,
             }
             benchmark_records.append(rec)
-            print(f"    [String  | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | GC: {rec['gc_time_sec']:.3f}s | Result: {res}", flush=True)
+            print(f"    [GrpJoin | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | Result: {res}", flush=True)
 
         # ----------------------------------------------------------------------
-        # TEST 2: SHUFFLE-BOUND (RESAMPLING & WIDE PIVOTING)
+        # TEST 5C: EXECUTE CORRELATION
         # ----------------------------------------------------------------------
-        df_pivoted_saved = None
         for r in range(args.repeats):
             start_stage = get_current_max_stage(app_id)
             t0 = time.perf_counter()
-            res, df_piv = run_task2_shuffle_bound(spark, s3_parquet_path)
+            
+            # Execute using the cached outputs from Task 5B
+            df_correlation = run_correlation(df_joined_saved, sensor_codes_saved, target_metrics)
+            
+            # Force action
+            res = df_correlation.count()
+            
             t1 = time.perf_counter()
             wall_time = t1 - t0
-            df_pivoted_saved = df_piv
             metrics = get_stage_metrics(app_id, min_stage_id=start_stage)
 
             rec = {
-                "task_name": "Task 2: Shuffle-Bound (Resample & Pivot)",
-                "task_category": "Shuffle / Wide",
+                "task_name": "Task 5C: Math Correlation",
+                "task_category": "Analytics / Aggregation",
                 "cores": n_cores,
                 "repeat": r + 1,
                 "wall_time_sec": wall_time,
@@ -368,66 +558,10 @@ def main():
                 "result_count": res,
             }
             benchmark_records.append(rec)
-            print(f"    [Pivot   | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | ShuffRead: {rec['shuffle_read_bytes']/(1024**2):.1f}MB | Result: {res}", flush=True)
+            print(f"    [Correl  | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | Result: {res}", flush=True)
 
-        # ----------------------------------------------------------------------
-        # TEST 3: SKEW / WINDOW-BOUND (FORWARD-FILL IMPUTATION)
-        # ----------------------------------------------------------------------
-        df_filled_saved = None
-        for r in range(args.repeats):
-            start_stage = get_current_max_stage(app_id)
-            t0 = time.perf_counter()
-            res, df_fill = run_task3_skew_window_bound(spark, df_pivoted_saved)
-            t1 = time.perf_counter()
-            wall_time = t1 - t0
-            df_filled_saved = df_fill
-            metrics = get_stage_metrics(app_id, min_stage_id=start_stage)
-
-            rec = {
-                "task_name": "Task 3: Skew/Window (Forward-Fill)",
-                "task_category": "Window / Skew",
-                "cores": n_cores,
-                "repeat": r + 1,
-                "wall_time_sec": wall_time,
-                "cpu_time_sec": metrics["executorCpuTime_sec"],
-                "run_time_sec": metrics["executorRunTime_sec"],
-                "gc_time_sec": metrics["jvmGcTime_sec"],
-                "shuffle_read_bytes": metrics["shuffleReadBytes"],
-                "shuffle_write_bytes": metrics["shuffleWriteBytes"],
-                "num_tasks": metrics["numTasks"],
-                "result_count": res,
-            }
-            benchmark_records.append(rec)
-            print(f"    [FFill   | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | Result: {res}", flush=True)
-
-        # ----------------------------------------------------------------------
-        # TEST 4: DISTRIBUTED MLLIB TRAINING (RANDOM FOREST)
-        # ----------------------------------------------------------------------
-        for r in range(args.repeats):
-            start_stage = get_current_max_stage(app_id)
-            t0 = time.perf_counter()
-            res = run_task4_distributed_mllib(spark, df_filled_saved)
-            t1 = time.perf_counter()
-            wall_time = t1 - t0
-            metrics = get_stage_metrics(app_id, min_stage_id=start_stage)
-
-            rec = {
-                "task_name": "Task 4: Distributed MLlib (Random Forest)",
-                "task_category": "Distributed ML",
-                "cores": n_cores,
-                "repeat": r + 1,
-                "wall_time_sec": wall_time,
-                "cpu_time_sec": metrics["executorCpuTime_sec"],
-                "run_time_sec": metrics["executorRunTime_sec"],
-                "gc_time_sec": metrics["jvmGcTime_sec"],
-                "shuffle_read_bytes": metrics["shuffleReadBytes"],
-                "shuffle_write_bytes": metrics["shuffleWriteBytes"],
-                "num_tasks": metrics["numTasks"],
-                "result_count": res,
-            }
-            benchmark_records.append(rec)
-            print(f"    [MLlib   | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | Trees: {res}", flush=True)
-
+        # Clean up cached DataFrames before stopping the session
+        df_aggregated.unpersist()
         spark.stop()
         time.sleep(2)
 
@@ -520,30 +654,35 @@ def main():
     sns.set_theme(style="whitegrid", font_scale=1.1)
 
     # --------------------------------------------------------------------------
-    # Plot 1: Bitwise Masking vs String Conversion Comparison
+    # Plot 1: Anomaly Detection Tasks Comparison (5A / 5B / 5C)
     # --------------------------------------------------------------------------
-    plt.figure(figsize=(12, 6))
-    df_task1 = summary[summary["task_name"].str.contains("Task 1")]
-    
-    plt.subplot(1, 2, 1)
-    sns.barplot(data=df_task1, x="cores", y="wall_time_mean", hue="task_name", palette=["#2b5c8f", "#d95f02"])
-    plt.title("Execution Time: Bitwise vs String Parsing", fontsize=13, fontweight="bold")
-    plt.xlabel("Allocated Cores (CloudVeneto Cluster)")
-    plt.ylabel("Wall-Clock Time (s)")
-    plt.legend(title="Method", loc="upper right")
+    df_task5 = summary[summary["task_name"].str.contains("Task 5")]
+    if not df_task5.empty:
+        plt.figure(figsize=(12, 6))
 
-    plt.subplot(1, 2, 2)
-    sns.barplot(data=df_task1, x="cores", y="gc_time_mean", hue="task_name", palette=["#2b5c8f", "#d95f02"])
-    plt.title("JVM Garbage Collection Time Overhead", fontsize=13, fontweight="bold")
-    plt.xlabel("Allocated Cores (CloudVeneto Cluster)")
-    plt.ylabel("Total JVM GC Time (s)")
-    plt.legend(title="Method", loc="upper right")
+        plt.subplot(1, 2, 1)
+        sns.barplot(data=df_task5, x="cores", y="wall_time_mean", hue="task_name",
+                    palette=["#2b5c8f", "#d95f02", "#1b9e77"])
+        plt.title("Execution Time: Anomaly Detection Tasks", fontsize=13, fontweight="bold")
+        plt.xlabel("Allocated Cores (CloudVeneto Cluster)")
+        plt.ylabel("Wall-Clock Time (s)")
+        plt.legend(title="Task", loc="upper right")
 
-    plt.tight_layout()
-    plot1_path = os.path.join(plots_dir, "plot1_bitwise_vs_string.png")
-    plt.savefig(plot1_path, dpi=300)
-    plt.close()
-    print(f"Generated Plot 1: {plot1_path}")
+        plt.subplot(1, 2, 2)
+        sns.barplot(data=df_task5, x="cores", y="gc_time_mean", hue="task_name",
+                    palette=["#2b5c8f", "#d95f02", "#1b9e77"])
+        plt.title("JVM Garbage Collection Time Overhead", fontsize=13, fontweight="bold")
+        plt.xlabel("Allocated Cores (CloudVeneto Cluster)")
+        plt.ylabel("Total JVM GC Time (s)")
+        plt.legend(title="Task", loc="upper right")
+
+        plt.tight_layout()
+        plot1_path = os.path.join(plots_dir, "plot1_anomaly_detection_tasks.png")
+        plt.savefig(plot1_path, dpi=300)
+        plt.close()
+        print(f"Generated Plot 1: {plot1_path}")
+    else:
+        print("Skipping Plot 1: no Task 5 data found.")
 
     # --------------------------------------------------------------------------
     # Plot 2: Strong Scaling Speedup across Tasks
