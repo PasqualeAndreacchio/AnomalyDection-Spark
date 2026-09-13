@@ -581,6 +581,7 @@ def main():
     if args.shuffle_test and 6 in args.cores:
         print("\n" + "=" * 80)
         print("RUNNING SPARK SQL SHUFFLE PARTITIONS TUNING (CORES = 6)")
+        print("Testing Tasks 5A, 5B, 5C across partition configurations")
         print("=" * 80, flush=True)
         partition_options = [6, 12, 32, 200]
 
@@ -589,24 +590,87 @@ def main():
             spark = get_spark_session(cores_max=6, shuffle_partitions=p)
             app_id = spark.sparkContext.applicationId
 
+            # Warm-up
+            try:
+                spark.read.parquet(s3_parquet_path).limit(100).count()
+            except Exception as e:
+                print(f"    Warm-up error: {e}", flush=True)
+
+            # Build df_aggregated for this session
+            df_spark_shuff = spark.read.parquet(s3_parquet_path)
+            df_spark_shuff = df_spark_shuff.withColumn(
+                "when", sf.timestamp_millis(sf.col("when").cast("long"))
+            ).withColumn(
+                "timestamp_bucket", sf.date_trunc("minute", "when")
+            )
+            df_agg_shuff = (
+                df_spark_shuff.groupBy("timestamp_bucket", "hwid", "metric")
+                .agg(
+                    sf.coalesce(
+                        sf.mean(sf.when(sf.col("metric").isin(continuous_metrics), sf.col("value"))),
+                        sf.max(sf.col("value"))
+                    ).alias("aggregated_value")
+                )
+            ).cache()
+            df_agg_shuff.count()
+
+            total_num_tasks = 0
+
+            # --- Task 5A: Switch Counts ---
             start_stage = get_current_max_stage(app_id)
             t0 = time.perf_counter()
-            res, _ = run_task2_shuffle_bound(spark, s3_parquet_path)
+            df_anomaly1_sh, df_hourly_freq_sh = run_switch_counts(df_agg_shuff, target_metrics)
+            df_anomaly1_sh.cache()
+            df_hourly_freq_sh.cache()
+            df_hourly_freq_sh.count()
             t1 = time.perf_counter()
-            wall_time = t1 - t0
-            metrics = get_stage_metrics(app_id, min_stage_id=start_stage)
+            wall_5a = t1 - t0
+            metrics_5a = get_stage_metrics(app_id, min_stage_id=start_stage)
+            total_num_tasks += metrics_5a["numTasks"]
+            print(f"    [Partitions={p} | 5A Switch Counts] Wall: {wall_5a:.3f}s", flush=True)
+
+            # --- Task 5B: Group and Join ---
+            start_stage = get_current_max_stage(app_id)
+            t0 = time.perf_counter()
+            df_joined_sh, _, sensor_codes_sh = run_group_and_join(
+                metrics_json, SELECTED_GROUP, df_hourly_freq_sh, df_anomaly1_sh
+            )
+            df_joined_sh.cache()
+            df_joined_sh.count()
+            t1 = time.perf_counter()
+            wall_5b = t1 - t0
+            metrics_5b = get_stage_metrics(app_id, min_stage_id=start_stage)
+            total_num_tasks += metrics_5b["numTasks"]
+            print(f"    [Partitions={p} | 5B Group & Join]  Wall: {wall_5b:.3f}s", flush=True)
+
+            # --- Task 5C: Correlation ---
+            start_stage = get_current_max_stage(app_id)
+            t0 = time.perf_counter()
+            df_corr_sh = run_correlation(df_joined_sh, sensor_codes_sh, target_metrics)
+            df_corr_sh.count()
+            t1 = time.perf_counter()
+            wall_5c = t1 - t0
+            metrics_5c = get_stage_metrics(app_id, min_stage_id=start_stage)
+            total_num_tasks += metrics_5c["numTasks"]
+            print(f"    [Partitions={p} | 5C Correlation]   Wall: {wall_5c:.3f}s", flush=True)
 
             rec = {
                 "shuffle_partitions": p,
-                "wall_time_sec": wall_time,
-                "cpu_time_sec": metrics["executorCpuTime_sec"],
-                "gc_time_sec": metrics["jvmGcTime_sec"],
-                "shuffle_read_bytes": metrics["shuffleReadBytes"],
-                "shuffle_write_bytes": metrics["shuffleWriteBytes"],
-                "num_tasks": metrics["numTasks"],
+                "wall_time_5a": wall_5a,
+                "wall_time_5b": wall_5b,
+                "wall_time_5c": wall_5c,
+                "wall_time_total": wall_5a + wall_5b + wall_5c,
+                "cpu_time_sec": metrics_5a["executorCpuTime_sec"] + metrics_5b["executorCpuTime_sec"] + metrics_5c["executorCpuTime_sec"],
+                "gc_time_sec": metrics_5a["jvmGcTime_sec"] + metrics_5b["jvmGcTime_sec"] + metrics_5c["jvmGcTime_sec"],
+                "shuffle_read_bytes": metrics_5a["shuffleReadBytes"] + metrics_5b["shuffleReadBytes"] + metrics_5c["shuffleReadBytes"],
+                "shuffle_write_bytes": metrics_5a["shuffleWriteBytes"] + metrics_5b["shuffleWriteBytes"] + metrics_5c["shuffleWriteBytes"],
+                "num_tasks": total_num_tasks,
             }
             shuffle_records.append(rec)
-            print(f"    [ShufflePartitions: {p}] Wall: {wall_time:.3f}s | Tasks: {rec['num_tasks']} | ShuffRead: {rec['shuffle_read_bytes']/(1024**2):.1f}MB", flush=True)
+            print(f"    [ShufflePartitions: {p}] Total Wall: {rec['wall_time_total']:.3f}s | Tasks: {total_num_tasks} | ShuffRead: {rec['shuffle_read_bytes']/(1024**2):.1f}MB", flush=True)
+
+            # Clean up
+            df_agg_shuff.unpersist()
             spark.stop()
             time.sleep(2)
 
@@ -746,13 +810,35 @@ def main():
     # --------------------------------------------------------------------------
     if shuffle_records:
         df_shuff = pd.DataFrame(shuffle_records)
-        plt.figure(figsize=(11, 5))
+
+        # Reshape per-task wall times into long format for grouped bar chart
+        df_shuff_long = df_shuff.melt(
+            id_vars=["shuffle_partitions"],
+            value_vars=["wall_time_5a", "wall_time_5b", "wall_time_5c"],
+            var_name="task",
+            value_name="wall_time_sec",
+        )
+        task_labels = {
+            "wall_time_5a": "Task 5A: Switch Counts",
+            "wall_time_5b": "Task 5B: Group & Join",
+            "wall_time_5c": "Task 5C: Correlation",
+        }
+        df_shuff_long["task"] = df_shuff_long["task"].map(task_labels)
+
+        plt.figure(figsize=(14, 5))
 
         plt.subplot(1, 2, 1)
-        sns.barplot(data=df_shuff, x="shuffle_partitions", y="wall_time_sec", palette="viridis")
-        plt.title("Execution Time vs spark.sql.shuffle.partitions", fontsize=12, fontweight="bold")
+        sns.barplot(
+            data=df_shuff_long,
+            x="shuffle_partitions",
+            y="wall_time_sec",
+            hue="task",
+            palette=["#2b5c8f", "#d95f02", "#1b9e77"],
+        )
+        plt.title("Execution Time vs spark.sql.shuffle.partitions\n(Tasks 5A / 5B / 5C at 6 Cores)", fontsize=12, fontweight="bold")
         plt.xlabel("Shuffle Partitions Count")
         plt.ylabel("Wall-Clock Time (s)")
+        plt.legend(title="Task", loc="upper right", fontsize=9)
 
         plt.subplot(1, 2, 2)
         sns.barplot(data=df_shuff, x="shuffle_partitions", y="num_tasks", palette="rocket")
