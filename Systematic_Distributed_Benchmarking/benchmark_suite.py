@@ -441,122 +441,43 @@ def main():
         print("    df_aggregated cached and materialised.", flush=True)
 
         # ----------------------------------------------------------------------
-        # TEST 5A: SWITCH COUNTS (ANOMALY DETECTION 1)
+        # CORRELATION PIPELINE BENCHMARK
+        # Runs the full pipeline:  df_aggregated (cached)
+        #   → run_switch_counts → run_group_and_join → run_correlation
+        # No intermediate caching, so Spark must recompute the entire DAG
+        # on every repeat — giving a genuine scaling measurement.
         # ----------------------------------------------------------------------
-        df_anomaly1_saved, df_hourly_freq_saved = None, None
         for r in range(args.repeats):
-            # Clean up cache from previous repeat BEFORE new computation
-            # to prevent Spark from serving stale results via DAG deduplication
-            if r > 0 and df_anomaly1_saved is not None:
-                df_anomaly1_saved.unpersist()
-                df_hourly_freq_saved.unpersist()
-
             start_stage = get_current_max_stage(app_id)
             t0 = time.perf_counter()
-            
-            # Execute the function
-            df_anomaly1, df_hourly_frequency = run_switch_counts(df_aggregated, target_metrics)
-            
-            # Cache and force action to materialize the DataFrames
-            df_anomaly1.cache()
-            df_hourly_frequency.cache()
-            res = df_hourly_frequency.count() 
-            
-            t1 = time.perf_counter()
-            wall_time = t1 - t0
-            
-            df_anomaly1_saved = df_anomaly1
-            df_hourly_freq_saved = df_hourly_frequency
-            
-            metrics = get_stage_metrics(app_id, min_stage_id=start_stage)
 
-            rec = {
-                "task_name": "Task 5A: Switch Counts",
-                "task_category": "Analytics / UDF",
-                "cores": n_cores,
-                "repeat": r + 1,
-                "wall_time_sec": wall_time,
-                "cpu_time_sec": metrics["executorCpuTime_sec"],
-                "run_time_sec": metrics["executorRunTime_sec"],
-                "gc_time_sec": metrics["jvmGcTime_sec"],
-                "shuffle_read_bytes": metrics["shuffleReadBytes"],
-                "shuffle_write_bytes": metrics["shuffleWriteBytes"],
-                "num_tasks": metrics["numTasks"],
-                "result_count": res,
-            }
-            benchmark_records.append(rec)
-            print(f"    [Switches| Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | Result: {res}", flush=True)
-
-        # ----------------------------------------------------------------------
-        # TEST 5B: GROUP AND JOIN
-        # ----------------------------------------------------------------------
-        df_joined_saved, sensor_codes_saved = None, None
-        for r in range(args.repeats):
-            # Clean up cache from previous repeat BEFORE new computation
-            # to prevent Spark from serving stale results via DAG deduplication
-            if r > 0 and df_joined_saved is not None:
-                df_joined_saved.unpersist()
-
-            start_stage = get_current_max_stage(app_id)
-            t0 = time.perf_counter()
-            
-            # Execute using the cached outputs from Task 5A
-            df_joined, selected_metrics, sensor_codes = run_group_and_join(
-                metrics_json, 
-                SELECTED_GROUP, 
-                df_hourly_freq_saved, 
-                df_anomaly1_saved
+            # Stage 1: Switch Counts (from cached df_aggregated)
+            df_anomaly1, df_hourly_frequency = run_switch_counts(
+                df_aggregated, target_metrics
             )
-            
-            # Cache and force action
-            df_joined.cache()
-            res = df_joined.count()
-            
-            t1 = time.perf_counter()
-            wall_time = t1 - t0
-            
-            df_joined_saved = df_joined
-            sensor_codes_saved = sensor_codes
-            
-            metrics = get_stage_metrics(app_id, min_stage_id=start_stage)
 
-            rec = {
-                "task_name": "Task 5B: Group and Join",
-                "task_category": "Analytics / Pivot-Join",
-                "cores": n_cores,
-                "repeat": r + 1,
-                "wall_time_sec": wall_time,
-                "cpu_time_sec": metrics["executorCpuTime_sec"],
-                "run_time_sec": metrics["executorRunTime_sec"],
-                "gc_time_sec": metrics["jvmGcTime_sec"],
-                "shuffle_read_bytes": metrics["shuffleReadBytes"],
-                "shuffle_write_bytes": metrics["shuffleWriteBytes"],
-                "num_tasks": metrics["numTasks"],
-                "result_count": res,
-            }
-            benchmark_records.append(rec)
-            print(f"    [GrpJoin | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | Result: {res}", flush=True)
+            # Stage 2: Group and Join
+            df_joined, selected_metrics, sensor_codes = run_group_and_join(
+                metrics_json,
+                SELECTED_GROUP,
+                df_hourly_frequency,
+                df_anomaly1,
+            )
 
-        # ----------------------------------------------------------------------
-        # TEST 5C: EXECUTE CORRELATION
-        # ----------------------------------------------------------------------
-        for r in range(args.repeats):
-            start_stage = get_current_max_stage(app_id)
-            t0 = time.perf_counter()
-            
-            # Execute using the cached outputs from Task 5B
-            df_correlation = run_correlation(df_joined_saved, sensor_codes_saved, target_metrics)
-            
-            # Force action
+            # Stage 3: Correlation — force materialisation
+            df_correlation = run_correlation(
+                df_joined, sensor_codes, target_metrics
+            )
             res = df_correlation.count()
-            
+
             t1 = time.perf_counter()
             wall_time = t1 - t0
+
             metrics = get_stage_metrics(app_id, min_stage_id=start_stage)
 
             rec = {
-                "task_name": "Task 5C: Math Correlation",
-                "task_category": "Analytics / Aggregation",
+                "task_name": "Correlation Pipeline",
+                "task_category": "End-to-End Analytics",
                 "cores": n_cores,
                 "repeat": r + 1,
                 "wall_time_sec": wall_time,
@@ -569,7 +490,12 @@ def main():
                 "result_count": res,
             }
             benchmark_records.append(rec)
-            print(f"    [Correl  | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | Result: {res}", flush=True)
+            print(
+                f"    [CorrPipe| Cores: {n_cores} | Rep: {r+1}] "
+                f"Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | "
+                f"GC: {rec['gc_time_sec']:.3f}s | Result: {res}",
+                flush=True,
+            )
 
         # Clean up cached DataFrames before stopping the session
         df_aggregated.unpersist()
@@ -583,7 +509,7 @@ def main():
     if args.shuffle_test and 6 in args.cores:
         print("\n" + "=" * 80)
         print("RUNNING SPARK SQL SHUFFLE PARTITIONS TUNING (CORES = 6)")
-        print("Testing Tasks 5A, 5B, 5C across partition configurations")
+        print("Testing Correlation Pipeline across partition configurations")
         print("=" * 80, flush=True)
         partition_options = [6, 12, 32, 200]
 
@@ -616,60 +542,33 @@ def main():
             ).cache()
             df_agg_shuff.count()
 
-            total_num_tasks = 0
-
-            # --- Task 5A: Switch Counts ---
+            # --- Full pipeline: Switch Counts → Group & Join → Correlation ---
             start_stage = get_current_max_stage(app_id)
             t0 = time.perf_counter()
+
             df_anomaly1_sh, df_hourly_freq_sh = run_switch_counts(df_agg_shuff, target_metrics)
-            df_anomaly1_sh.cache()
-            df_hourly_freq_sh.cache()
-            df_hourly_freq_sh.count()
-            t1 = time.perf_counter()
-            wall_5a = t1 - t0
-            metrics_5a = get_stage_metrics(app_id, min_stage_id=start_stage)
-            total_num_tasks += metrics_5a["numTasks"]
-            print(f"    [Partitions={p} | 5A Switch Counts] Wall: {wall_5a:.3f}s", flush=True)
-
-            # --- Task 5B: Group and Join ---
-            start_stage = get_current_max_stage(app_id)
-            t0 = time.perf_counter()
             df_joined_sh, _, sensor_codes_sh = run_group_and_join(
                 metrics_json, SELECTED_GROUP, df_hourly_freq_sh, df_anomaly1_sh
             )
-            df_joined_sh.cache()
-            df_joined_sh.count()
-            t1 = time.perf_counter()
-            wall_5b = t1 - t0
-            metrics_5b = get_stage_metrics(app_id, min_stage_id=start_stage)
-            total_num_tasks += metrics_5b["numTasks"]
-            print(f"    [Partitions={p} | 5B Group & Join]  Wall: {wall_5b:.3f}s", flush=True)
-
-            # --- Task 5C: Correlation ---
-            start_stage = get_current_max_stage(app_id)
-            t0 = time.perf_counter()
             df_corr_sh = run_correlation(df_joined_sh, sensor_codes_sh, target_metrics)
             df_corr_sh.count()
+
             t1 = time.perf_counter()
-            wall_5c = t1 - t0
-            metrics_5c = get_stage_metrics(app_id, min_stage_id=start_stage)
-            total_num_tasks += metrics_5c["numTasks"]
-            print(f"    [Partitions={p} | 5C Correlation]   Wall: {wall_5c:.3f}s", flush=True)
+            wall_total = t1 - t0
+            metrics_all = get_stage_metrics(app_id, min_stage_id=start_stage)
+            print(f"    [Partitions={p} | Full Pipeline] Wall: {wall_total:.3f}s", flush=True)
 
             rec = {
                 "shuffle_partitions": p,
-                "wall_time_5a": wall_5a,
-                "wall_time_5b": wall_5b,
-                "wall_time_5c": wall_5c,
-                "wall_time_total": wall_5a + wall_5b + wall_5c,
-                "cpu_time_sec": metrics_5a["executorCpuTime_sec"] + metrics_5b["executorCpuTime_sec"] + metrics_5c["executorCpuTime_sec"],
-                "gc_time_sec": metrics_5a["jvmGcTime_sec"] + metrics_5b["jvmGcTime_sec"] + metrics_5c["jvmGcTime_sec"],
-                "shuffle_read_bytes": metrics_5a["shuffleReadBytes"] + metrics_5b["shuffleReadBytes"] + metrics_5c["shuffleReadBytes"],
-                "shuffle_write_bytes": metrics_5a["shuffleWriteBytes"] + metrics_5b["shuffleWriteBytes"] + metrics_5c["shuffleWriteBytes"],
-                "num_tasks": total_num_tasks,
+                "wall_time_total": wall_total,
+                "cpu_time_sec": metrics_all["executorCpuTime_sec"],
+                "gc_time_sec": metrics_all["jvmGcTime_sec"],
+                "shuffle_read_bytes": metrics_all["shuffleReadBytes"],
+                "shuffle_write_bytes": metrics_all["shuffleWriteBytes"],
+                "num_tasks": metrics_all["numTasks"],
             }
             shuffle_records.append(rec)
-            print(f"    [ShufflePartitions: {p}] Total Wall: {rec['wall_time_total']:.3f}s | Tasks: {total_num_tasks} | ShuffRead: {rec['shuffle_read_bytes']/(1024**2):.1f}MB", flush=True)
+            print(f"    [ShufflePartitions: {p}] Wall: {rec['wall_time_total']:.3f}s | Tasks: {rec['num_tasks']} | ShuffRead: {rec['shuffle_read_bytes']/(1024**2):.1f}MB", flush=True)
 
             # Clean up
             df_agg_shuff.unpersist()
@@ -728,52 +627,42 @@ def main():
     # ==========================================================================
     sns.set_theme(style="whitegrid", font_scale=1.1)
 
-    # --------------------------------------------------------------------------
-    # Plot 1: Anomaly Detection Tasks Comparison (5A / 5B / 5C)
-    # --------------------------------------------------------------------------
-    df_task5 = summary[summary["task_name"].str.contains("Task 5")]
-    if not df_task5.empty:
-        plt.figure(figsize=(12, 6))
-
-        plt.subplot(1, 2, 1)
-        sns.barplot(data=df_task5, x="cores", y="wall_time_mean", hue="task_name",
-                    palette=["#2b5c8f", "#d95f02", "#1b9e77"])
-        plt.title("Execution Time: Anomaly Detection Tasks", fontsize=13, fontweight="bold")
-        plt.xlabel("Allocated Cores (CloudVeneto Cluster)")
-        plt.ylabel("Wall-Clock Time (s)")
-        plt.legend(title="Task", loc="upper right")
-
-        plt.subplot(1, 2, 2)
-        sns.barplot(data=df_task5, x="cores", y="gc_time_mean", hue="task_name",
-                    palette=["#2b5c8f", "#d95f02", "#1b9e77"])
-        plt.title("JVM Garbage Collection Time Overhead", fontsize=13, fontweight="bold")
-        plt.xlabel("Allocated Cores (CloudVeneto Cluster)")
-        plt.ylabel("Total JVM GC Time (s)")
-        plt.legend(title="Task", loc="upper right")
-
-        plt.tight_layout()
-        plot1_path = os.path.join(plots_dir, "plot1_anomaly_detection_tasks.png")
-        plt.savefig(plot1_path, dpi=300)
-        plt.close()
-        print(f"Generated Plot 1: {plot1_path}")
-    else:
-        print("Skipping Plot 1: no Task 5 data found.")
+    max_cores = max(args.cores)
 
     # --------------------------------------------------------------------------
-    # Plot 2: Strong Scaling Speedup across Tasks
+    # Plot 1: Correlation Pipeline — Wall Time & GC across Cores
+    # --------------------------------------------------------------------------
+    plt.figure(figsize=(12, 6))
+
+    plt.subplot(1, 2, 1)
+    sns.barplot(data=summary, x="cores", y="wall_time_mean", color="#2b5c8f")
+    plt.title("Correlation Pipeline: Execution Time", fontsize=13, fontweight="bold")
+    plt.xlabel("Allocated Cores (CloudVeneto Cluster)")
+    plt.ylabel("Wall-Clock Time (s)")
+
+    plt.subplot(1, 2, 2)
+    sns.barplot(data=summary, x="cores", y="gc_time_mean", color="#d95f02")
+    plt.title("Correlation Pipeline: JVM GC Overhead", fontsize=13, fontweight="bold")
+    plt.xlabel("Allocated Cores (CloudVeneto Cluster)")
+    plt.ylabel("Total JVM GC Time (s)")
+
+    plt.tight_layout()
+    plot1_path = os.path.join(plots_dir, "plot1_correlation_pipeline.png")
+    plt.savefig(plot1_path, dpi=300)
+    plt.close()
+    print(f"Generated Plot 1: {plot1_path}")
+
+    # --------------------------------------------------------------------------
+    # Plot 2: Strong Scaling Speedup
     # --------------------------------------------------------------------------
     plt.figure(figsize=(10, 6))
     ideal_cores = np.array(args.cores)
     plt.plot(ideal_cores, ideal_cores, "k--", label="Ideal Linear Speedup", linewidth=1.5, alpha=0.7)
 
-    tasks_unique = summary["task_name"].unique()
-    palette = sns.color_palette("tab10", len(tasks_unique))
+    sub = summary.sort_values("cores")
+    plt.plot(sub["cores"], sub["speedup"], marker="o", linewidth=2.2, label="Correlation Pipeline", color="#2b5c8f")
 
-    for i, tname in enumerate(tasks_unique):
-        sub = summary[summary["task_name"] == tname].sort_values("cores")
-        plt.plot(sub["cores"], sub["speedup"], marker="o", linewidth=2.2, label=tname, color=palette[i])
-
-    plt.title("Strong Scaling Speedup S(N) across Spark Computational Tasks", fontsize=14, fontweight="bold")
+    plt.title("Strong Scaling Speedup S(N) — Correlation Pipeline", fontsize=14, fontweight="bold")
     plt.xlabel("Number of Cores (N)", fontsize=12)
     plt.ylabel("Speedup S(N) = T(1) / T(N)", fontsize=12)
     plt.xticks(args.cores)
@@ -791,11 +680,9 @@ def main():
     plt.figure(figsize=(10, 6))
     plt.axhline(100.0, color="k", linestyle="--", label="Ideal 100% Efficiency", alpha=0.7)
 
-    for i, tname in enumerate(tasks_unique):
-        sub = summary[summary["task_name"] == tname].sort_values("cores")
-        plt.plot(sub["cores"], sub["efficiency"] * 100.0, marker="s", linewidth=2.2, label=tname, color=palette[i])
+    plt.plot(sub["cores"], sub["efficiency"] * 100.0, marker="s", linewidth=2.2, label="Correlation Pipeline", color="#2b5c8f")
 
-    plt.title("Parallel Efficiency E(N) = S(N)/N across Spark Tasks", fontsize=14, fontweight="bold")
+    plt.title("Parallel Efficiency E(N) = S(N)/N — Correlation Pipeline", fontsize=14, fontweight="bold")
     plt.xlabel("Number of Cores (N)", fontsize=12)
     plt.ylabel("Parallel Efficiency (%)", fontsize=12)
     plt.xticks(args.cores)
@@ -813,34 +700,13 @@ def main():
     if shuffle_records:
         df_shuff = pd.DataFrame(shuffle_records)
 
-        # Reshape per-task wall times into long format for grouped bar chart
-        df_shuff_long = df_shuff.melt(
-            id_vars=["shuffle_partitions"],
-            value_vars=["wall_time_5a", "wall_time_5b", "wall_time_5c"],
-            var_name="task",
-            value_name="wall_time_sec",
-        )
-        task_labels = {
-            "wall_time_5a": "Task 5A: Switch Counts",
-            "wall_time_5b": "Task 5B: Group & Join",
-            "wall_time_5c": "Task 5C: Correlation",
-        }
-        df_shuff_long["task"] = df_shuff_long["task"].map(task_labels)
-
         plt.figure(figsize=(14, 5))
 
         plt.subplot(1, 2, 1)
-        sns.barplot(
-            data=df_shuff_long,
-            x="shuffle_partitions",
-            y="wall_time_sec",
-            hue="task",
-            palette=["#2b5c8f", "#d95f02", "#1b9e77"],
-        )
-        plt.title("Execution Time vs spark.sql.shuffle.partitions\n(Tasks 5A / 5B / 5C at 6 Cores)", fontsize=12, fontweight="bold")
+        sns.barplot(data=df_shuff, x="shuffle_partitions", y="wall_time_total", color="#2b5c8f")
+        plt.title(f"Pipeline Wall Time vs spark.sql.shuffle.partitions\n(Correlation Pipeline at {max_cores} Cores)", fontsize=12, fontweight="bold")
         plt.xlabel("Shuffle Partitions Count")
         plt.ylabel("Wall-Clock Time (s)")
-        plt.legend(title="Task", loc="upper right", fontsize=9)
 
         plt.subplot(1, 2, 2)
         sns.barplot(data=df_shuff, x="shuffle_partitions", y="num_tasks", palette="rocket")
@@ -855,24 +721,29 @@ def main():
         print(f"Generated Plot 4: {plot4_path}")
 
     # --------------------------------------------------------------------------
-    # Plot 5: Execution Breakdown (CPU vs GC vs I/O/Wait) at 6 Cores
+    # Plot 5: Execution Breakdown (CPU vs GC vs I/O/Wait) at Max Cores
     # --------------------------------------------------------------------------
-    summary_6c = summary[summary["cores"] == 6].copy()
-    if not summary_6c.empty:
-        summary_6c["io_wait_time"] = np.maximum(0, summary_6c["wall_time_mean"] - (summary_6c["cpu_time_mean"] / 6.0) - summary_6c["gc_time_mean"])
-        
+    summary_max = summary[summary["cores"] == max_cores].copy()
+    if not summary_max.empty:
+        summary_max["io_wait_time"] = np.maximum(
+            0,
+            summary_max["wall_time_mean"]
+            - (summary_max["cpu_time_mean"] / float(max_cores))
+            - summary_max["gc_time_mean"],
+        )
+
         plt.figure(figsize=(12, 6))
-        bar_data = summary_6c.set_index("task_name")[["cpu_time_mean", "gc_time_mean", "io_wait_time"]]
-        bar_data["norm_cpu"] = summary_6c.set_index("task_name")["cpu_time_mean"] / 6.0
-        
+        bar_data = summary_max.set_index("task_name")[["cpu_time_mean", "gc_time_mean", "io_wait_time"]]
+        bar_data["norm_cpu"] = summary_max.set_index("task_name")["cpu_time_mean"] / float(max_cores)
+
         plot_df = pd.DataFrame({
             "Active CPU (Per-Core Equiv)": bar_data["norm_cpu"],
             "JVM GC Overhead": bar_data["gc_time_mean"],
             "Network / I/O / Shuffle Wait": bar_data["io_wait_time"]
         })
-        
+
         plot_df.plot(kind="barh", stacked=True, color=["#1f77b4", "#ff7f0e", "#2ca02c"], figsize=(12, 6))
-        plt.title("Execution Time Breakdown at 6 Cores (CloudVeneto Cluster)", fontsize=13, fontweight="bold")
+        plt.title(f"Execution Time Breakdown at {max_cores} Cores (CloudVeneto Cluster)", fontsize=13, fontweight="bold")
         plt.xlabel("Effective Duration (Seconds)")
         plt.ylabel("")
         plt.legend(loc="lower right")
