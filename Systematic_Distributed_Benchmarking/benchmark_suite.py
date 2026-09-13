@@ -62,22 +62,28 @@ def get_spark_session(app_name="MAPD_Benchmark", cores_max=6, shuffle_partitions
 def get_stage_metrics(app_id, min_stage_id=0):
     """Queries the Spark UI REST API to extract stage-level performance counters."""
     url = f"http://localhost:4040/api/v1/applications/{app_id}/stages"
-    try:
-        with urllib.request.urlopen(url, timeout=5) as res:
-            stages = json.loads(res.read().decode())
-    except Exception as e:
-        print(f"Warning: could not query Spark REST API: {e}", flush=True)
-        return {
-            "executorRunTime_sec": 0.0,
-            "executorCpuTime_sec": 0.0,
-            "jvmGcTime_sec": 0.0,
-            "shuffleReadBytes": 0,
-            "shuffleWriteBytes": 0,
-            "memoryBytesSpilled": 0,
-            "diskBytesSpilled": 0,
-            "numTasks": 0,
-            "max_stage_id": min_stage_id,
-        }
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(url, timeout=10) as res:
+                stages = json.loads(res.read().decode())
+            break
+        except Exception as e:
+            if attempt < 2:
+                print(f"    Warning: stage metrics API attempt {attempt+1} failed ({e}), retrying...", flush=True)
+                time.sleep(1)
+            else:
+                print(f"Warning: could not query Spark REST API after 3 attempts: {e}", flush=True)
+                return {
+                    "executorRunTime_sec": 0.0,
+                    "executorCpuTime_sec": 0.0,
+                    "jvmGcTime_sec": 0.0,
+                    "shuffleReadBytes": 0,
+                    "shuffleWriteBytes": 0,
+                    "memoryBytesSpilled": 0,
+                    "diskBytesSpilled": 0,
+                    "numTasks": 0,
+                    "max_stage_id": min_stage_id,
+                }
 
     relevant_stages = [s for s in stages if s.get("stageId", -1) >= min_stage_id]
     max_id = max([s.get("stageId", -1) for s in stages], default=min_stage_id)
@@ -104,15 +110,23 @@ def get_stage_metrics(app_id, min_stage_id=0):
     }
 
 
-def get_current_max_stage(app_id):
-    """Returns the highest stage ID recorded so far."""
+def get_current_max_stage(app_id, retries=3, delay=1.0):
+    """Returns the highest stage ID recorded so far, +1 (exclusive upper bound).
+    Retries on transient REST API failures to avoid returning 0 and
+    contaminating metrics with stages from previous computations."""
     url = f"http://localhost:4040/api/v1/applications/{app_id}/stages"
-    try:
-        with urllib.request.urlopen(url, timeout=5) as res:
-            stages = json.loads(res.read().decode())
-            return max([s.get("stageId", -1) for s in stages], default=0) + 1
-    except Exception:
-        return 0
+    for attempt in range(retries):
+        try:
+            with urllib.request.urlopen(url, timeout=10) as res:
+                stages = json.loads(res.read().decode())
+                return max([s.get("stageId", -1) for s in stages], default=0) + 1
+        except Exception as e:
+            if attempt < retries - 1:
+                print(f"    Warning: REST API attempt {attempt+1} failed ({e}), retrying in {delay}s...", flush=True)
+                time.sleep(delay)
+            else:
+                print(f"    Warning: REST API failed after {retries} attempts, returning 0", flush=True)
+                return 0
 
 
 # ==============================================================================
