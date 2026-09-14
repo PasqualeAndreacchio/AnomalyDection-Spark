@@ -3,3 +3,4 @@ pyenv/
 personal/
 .venv
 .vscode/
+__pycache__/
