@@ -16,7 +16,9 @@ import sys
 import time
 import json
 import argparse
+import logging
 import urllib.request
+from datetime import datetime
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -27,6 +29,35 @@ import pyspark.sql.functions as sf
 from pyspark.sql import Window
 from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.classification import RandomForestClassifier as SparkRF
+
+logger = logging.getLogger("SparkBenchmark")
+
+
+def setup_logger(output_dir, log_file=None):
+    """Configures a logger that outputs to both stdout and a persistent file."""
+    os.makedirs(output_dir, exist_ok=True)
+    if not log_file:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_file = os.path.join(output_dir, f"benchmark_{timestamp}.log")
+    elif not os.path.isabs(log_file):
+        log_file = os.path.join(output_dir, log_file)
+
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+
+    formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+    # Console Handler (stdout)
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    # File Handler
+    file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    return logger, log_file
 
 
 def get_spark_session(app_name="MAPD_Benchmark", cores_max=6, shuffle_partitions=12):
@@ -65,7 +96,7 @@ def get_stage_metrics(app_id, min_stage_id=0):
         with urllib.request.urlopen(url, timeout=5) as res:
             stages = json.loads(res.read().decode())
     except Exception as e:
-        print(f"Warning: could not query Spark REST API: {e}", flush=True)
+        logger.warning(f"Could not query Spark REST API: {e}")
         return {
             "executorRunTime_sec": 0.0,
             "executorCpuTime_sec": 0.0,
@@ -254,6 +285,7 @@ def main():
     parser.add_argument("--repeats", type=int, default=2, help="Number of repetitions per benchmark")
     parser.add_argument("--shuffle-test", action="store_true", default=True, help="Test shuffle partitions (6, 12, 32, 200)")
     parser.add_argument("--output-dir", type=str, default="/home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking", help="Output directory")
+    parser.add_argument("--log-file", type=str, default=None, help="Custom log file name or path (default: auto-generated timestamped log)")
     args = parser.parse_args()
 
     s3_parquet_path = "s3a://MAPDB-Group5/data_parquet"
@@ -261,28 +293,46 @@ def main():
     plots_dir = os.path.join(output_dir, "benchmark_plots")
     os.makedirs(plots_dir, exist_ok=True)
 
-    print("=" * 80)
-    print("STARTING SYSTEMATIC DISTRIBUTED SPARK BENCHMARK (TASK 3.3.3)")
-    print(f"Data source: {s3_parquet_path}")
-    print(f"Cores configurations: {args.cores}")
-    print(f"Repetitions per test: {args.repeats}")
-    print(f"Output directory: {output_dir}")
-    print("=" * 80, flush=True)
+    log, log_file = setup_logger(output_dir, args.log_file)
+
+    logger.info("=" * 80)
+    logger.info("STARTING SYSTEMATIC DISTRIBUTED SPARK BENCHMARK (TASK 3.3.3)")
+    logger.info(f"Data source: {s3_parquet_path}")
+    logger.info(f"Cores configurations: {args.cores}")
+    logger.info(f"Repetitions per test: {args.repeats}")
+    logger.info(f"Output directory: {output_dir}")
+    logger.info(f"Log file: {log_file}")
+    logger.info("=" * 80)
 
     benchmark_records = []
 
+    # --------------------------------------------------------------------------
+    # GLOBAL CLUSTER WARM-UP (S3 connection pool, JVM classes & OS Page Cache)
+    # --------------------------------------------------------------------------
+    logger.info("\n>>> Performing Global Cluster Warm-Up (6 Cores) to pre-warm OS cache & S3 connections ...")
+    spark_warmup = get_spark_session(cores_max=max(args.cores), shuffle_partitions=12)
+    try:
+        # Scan parquet columns to warm S3 connection pool, HTTPS SSL handshakes and OS page cache
+        spark_warmup.read.parquet(s3_parquet_path).select("metric", "value").filter(sf.col("value") == "warmup").count()
+        logger.info("    Cluster Warm-Up complete.")
+    except Exception as e:
+        logger.warning(f"    Warm-up notice: {e}")
+    finally:
+        spark_warmup.stop()
+        time.sleep(2)
+
     for n_cores in args.cores:
-        print(f"\n>>> Initializing Spark Session with spark.cores.max = {n_cores} ...", flush=True)
+        logger.info(f"\n>>> Initializing Spark Session with spark.cores.max = {n_cores} ...")
         spark = get_spark_session(cores_max=n_cores, shuffle_partitions=12)
         app_id = spark.sparkContext.applicationId
-        print(f"    Application ID: {app_id}")
+        logger.info(f"    Application ID: {app_id}")
 
         # Warm-up run to initialize JVM classes, S3A connectors & connection pool
-        print("    Executing Warm-up run...", flush=True)
+        logger.info("    Executing Warm-up run...")
         try:
             spark.read.parquet(s3_parquet_path).limit(100).count()
         except Exception as e:
-            print(f"    Warm-up error: {e}", flush=True)
+            logger.warning(f"    Warm-up error: {e}")
 
         # ----------------------------------------------------------------------
         # TEST 1A: MAP-BOUND (BITWISE MASK 224)
@@ -310,7 +360,7 @@ def main():
                 "result_count": res,
             }
             benchmark_records.append(rec)
-            print(f"    [Bitwise | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | GC: {rec['gc_time_sec']:.3f}s | Result: {res}", flush=True)
+            logger.info(f"    [Bitwise | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | GC: {rec['gc_time_sec']:.3f}s | Result: {res}")
 
         # ----------------------------------------------------------------------
         # TEST 1B: MAP-BOUND (STRING CONVERSION & SUBSTRING)
@@ -338,7 +388,7 @@ def main():
                 "result_count": res,
             }
             benchmark_records.append(rec)
-            print(f"    [String  | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | GC: {rec['gc_time_sec']:.3f}s | Result: {res}", flush=True)
+            logger.info(f"    [String  | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | GC: {rec['gc_time_sec']:.3f}s | Result: {res}")
 
         # ----------------------------------------------------------------------
         # TEST 2: SHUFFLE-BOUND (RESAMPLING & WIDE PIVOTING)
@@ -368,7 +418,12 @@ def main():
                 "result_count": res,
             }
             benchmark_records.append(rec)
-            print(f"    [Pivot   | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | ShuffRead: {rec['shuffle_read_bytes']/(1024**2):.1f}MB | Result: {res}", flush=True)
+            logger.info(f"    [Pivot   | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | ShuffRead: {rec['shuffle_read_bytes']/(1024**2):.1f}MB | Result: {res}")
+
+            if r < args.repeats - 1:
+                df_piv.unpersist()
+            else:
+                df_pivoted_saved = df_piv
 
         # ----------------------------------------------------------------------
         # TEST 3: SKEW / WINDOW-BOUND (FORWARD-FILL IMPUTATION)
@@ -398,7 +453,12 @@ def main():
                 "result_count": res,
             }
             benchmark_records.append(rec)
-            print(f"    [FFill   | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | Result: {res}", flush=True)
+            logger.info(f"    [FFill   | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | Result: {res}")
+
+            if r < args.repeats - 1:
+                df_fill.unpersist()
+            else:
+                df_filled_saved = df_fill
 
         # ----------------------------------------------------------------------
         # TEST 4: DISTRIBUTED MLLIB TRAINING (RANDOM FOREST)
@@ -426,7 +486,7 @@ def main():
                 "result_count": res,
             }
             benchmark_records.append(rec)
-            print(f"    [MLlib   | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | Trees: {res}", flush=True)
+            logger.info(f"    [MLlib   | Cores: {n_cores} | Rep: {r+1}] Wall: {wall_time:.3f}s | CPU: {rec['cpu_time_sec']:.3f}s | Trees: {res}")
 
         spark.stop()
         time.sleep(2)
@@ -436,13 +496,13 @@ def main():
     # --------------------------------------------------------------------------
     shuffle_records = []
     if args.shuffle_test and 6 in args.cores:
-        print("\n" + "=" * 80)
-        print("RUNNING SPARK SQL SHUFFLE PARTITIONS TUNING (CORES = 6)")
-        print("=" * 80, flush=True)
+        logger.info("\n" + "=" * 80)
+        logger.info("RUNNING SPARK SQL SHUFFLE PARTITIONS TUNING (CORES = 6)")
+        logger.info("=" * 80)
         partition_options = [6, 12, 32, 200]
 
         for p in partition_options:
-            print(f"\n>>> Testing spark.sql.shuffle.partitions = {p} ...", flush=True)
+            logger.info(f"\n>>> Testing spark.sql.shuffle.partitions = {p} ...")
             spark = get_spark_session(cores_max=6, shuffle_partitions=p)
             app_id = spark.sparkContext.applicationId
 
@@ -463,7 +523,7 @@ def main():
                 "num_tasks": metrics["numTasks"],
             }
             shuffle_records.append(rec)
-            print(f"    [ShufflePartitions: {p}] Wall: {wall_time:.3f}s | Tasks: {rec['num_tasks']} | ShuffRead: {rec['shuffle_read_bytes']/(1024**2):.1f}MB", flush=True)
+            logger.info(f"    [ShufflePartitions: {p}] Wall: {wall_time:.3f}s | Tasks: {rec['num_tasks']} | ShuffRead: {rec['shuffle_read_bytes']/(1024**2):.1f}MB")
             spark.stop()
             time.sleep(2)
 
@@ -507,12 +567,13 @@ def main():
             "shuffle_tuning": shuffle_records
         }, f, indent=2, default=str)
 
-    print("\n" + "=" * 80)
-    print("BENCHMARK SUMMARY (STRONG SCALING & METRICS)")
-    print("=" * 80)
-    print(summary[["task_name", "cores", "wall_time_mean", "speedup", "efficiency", "cpu_time_mean", "gc_time_mean"]].to_string())
-    print(f"\nSaved CSV to: {csv_path}")
-    print(f"Saved JSON to: {json_path}")
+    logger.info("\n" + "=" * 80)
+    logger.info("BENCHMARK SUMMARY (STRONG SCALING & METRICS)")
+    logger.info("=" * 80)
+    logger.info("\n" + summary[["task_name", "cores", "wall_time_mean", "speedup", "efficiency", "cpu_time_mean", "gc_time_mean"]].to_string())
+    logger.info(f"\nSaved CSV to: {csv_path}")
+    logger.info(f"Saved JSON to: {json_path}")
+    logger.info(f"Saved Log to: {log_file}")
 
     # ==========================================================================
     # GENERATE PUBLICATION-QUALITY PLOTS
@@ -543,7 +604,7 @@ def main():
     plot1_path = os.path.join(plots_dir, "plot1_bitwise_vs_string.png")
     plt.savefig(plot1_path, dpi=300)
     plt.close()
-    print(f"Generated Plot 1: {plot1_path}")
+    logger.info(f"Generated Plot 1: {plot1_path}")
 
     # --------------------------------------------------------------------------
     # Plot 2: Strong Scaling Speedup across Tasks
@@ -569,7 +630,7 @@ def main():
     plot2_path = os.path.join(plots_dir, "plot2_strong_scaling_speedup.png")
     plt.savefig(plot2_path, dpi=300, bbox_inches="tight")
     plt.close()
-    print(f"Generated Plot 2: {plot2_path}")
+    logger.info(f"Generated Plot 2: {plot2_path}")
 
     # --------------------------------------------------------------------------
     # Plot 3: Parallel Efficiency
@@ -591,7 +652,7 @@ def main():
     plot3_path = os.path.join(plots_dir, "plot3_parallel_efficiency.png")
     plt.savefig(plot3_path, dpi=300, bbox_inches="tight")
     plt.close()
-    print(f"Generated Plot 3: {plot3_path}")
+    logger.info(f"Generated Plot 3: {plot3_path}")
 
     # --------------------------------------------------------------------------
     # Plot 4: Spark SQL Shuffle Partitions Tuning
@@ -601,13 +662,13 @@ def main():
         plt.figure(figsize=(11, 5))
 
         plt.subplot(1, 2, 1)
-        sns.barplot(data=df_shuff, x="shuffle_partitions", y="wall_time_sec", palette="viridis")
+        sns.barplot(data=df_shuff, x="shuffle_partitions", y="wall_time_sec", hue="shuffle_partitions", palette="viridis", legend=False)
         plt.title("Execution Time vs spark.sql.shuffle.partitions", fontsize=12, fontweight="bold")
         plt.xlabel("Shuffle Partitions Count")
         plt.ylabel("Wall-Clock Time (s)")
 
         plt.subplot(1, 2, 2)
-        sns.barplot(data=df_shuff, x="shuffle_partitions", y="num_tasks", palette="rocket")
+        sns.barplot(data=df_shuff, x="shuffle_partitions", y="num_tasks", hue="shuffle_partitions", palette="rocket", legend=False)
         plt.title("Total Scheduled Spark Tasks", fontsize=12, fontweight="bold")
         plt.xlabel("Shuffle Partitions Count")
         plt.ylabel("Number of Tasks")
@@ -616,7 +677,7 @@ def main():
         plot4_path = os.path.join(plots_dir, "plot4_shuffle_partitions_tuning.png")
         plt.savefig(plot4_path, dpi=300)
         plt.close()
-        print(f"Generated Plot 4: {plot4_path}")
+        logger.info(f"Generated Plot 4: {plot4_path}")
 
     # --------------------------------------------------------------------------
     # Plot 5: Execution Breakdown (CPU vs GC vs I/O/Wait) at 6 Cores
@@ -645,9 +706,9 @@ def main():
         plot5_path = os.path.join(plots_dir, "plot5_metrics_breakdown.png")
         plt.savefig(plot5_path, dpi=300)
         plt.close()
-        print(f"Generated Plot 5: {plot5_path}")
+        logger.info(f"Generated Plot 5: {plot5_path}")
 
-    print("\nALL BENCHMARKS AND VISUALIZATIONS COMPLETED SUCCESSFULLY!")
+    logger.info("\nALL BENCHMARKS AND VISUALIZATIONS COMPLETED SUCCESSFULLY!")
 
 
 if __name__ == "__main__":

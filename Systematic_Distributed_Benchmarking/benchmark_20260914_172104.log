@@ -1,0 +1,104 @@
+[2026-09-14 17:21:04] [INFO] ================================================================================
+[2026-09-14 17:21:04] [INFO] STARTING SYSTEMATIC DISTRIBUTED SPARK BENCHMARK (TASK 3.3.3)
+[2026-09-14 17:21:04] [INFO] Data source: s3a://MAPDB-Group5/data_parquet
+[2026-09-14 17:21:04] [INFO] Cores configurations: [1, 2, 4, 6]
+[2026-09-14 17:21:04] [INFO] Repetitions per test: 1
+[2026-09-14 17:21:04] [INFO] Output directory: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking
+[2026-09-14 17:21:04] [INFO] Log file: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_20260914_172104.log
+[2026-09-14 17:21:04] [INFO] ================================================================================
+[2026-09-14 17:21:04] [INFO] 
+>>> Performing Global Cluster Warm-Up (6 Cores) to pre-warm OS cache & S3 connections ...
+[2026-09-14 17:21:57] [WARNING]     Warm-up notice: [CAST_INVALID_INPUT] The value 'warmup' of the type "STRING" cannot be cast to "BIGINT" because it is malformed. Correct the value as per the syntax, or change its target type. Use `try_cast` to tolerate malformed input and return NULL instead. SQLSTATE: 22018
+== DataFrame ==
+"__eq__" was called from
+/home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_suite.py:316
+
+[2026-09-14 17:22:00] [INFO] 
+>>> Initializing Spark Session with spark.cores.max = 1 ...
+[2026-09-14 17:22:03] [INFO]     Application ID: app-20260914172203-0017
+[2026-09-14 17:22:03] [INFO]     Executing Warm-up run...
+[2026-09-14 17:22:37] [INFO]     [Bitwise | Cores: 1 | Rep: 1] Wall: 11.908s | CPU: 4.792s | GC: 0.229s | Result: 161
+[2026-09-14 17:22:47] [INFO]     [String  | Cores: 1 | Rep: 1] Wall: 10.679s | CPU: 4.625s | GC: 0.163s | Result: 161
+[2026-09-14 17:25:19] [INFO]     [Pivot   | Cores: 1 | Rep: 1] Wall: 151.062s | ShuffRead: 1271.0MB | Result: 671851
+[2026-09-14 17:25:23] [INFO]     [FFill   | Cores: 1 | Rep: 1] Wall: 3.968s | CPU: 2.833s | Result: 671851
+[2026-09-14 17:25:32] [INFO]     [MLlib   | Cores: 1 | Rep: 1] Wall: 9.252s | CPU: 2.769s | Trees: 15
+[2026-09-14 17:25:34] [INFO] 
+>>> Initializing Spark Session with spark.cores.max = 2 ...
+[2026-09-14 17:25:38] [INFO]     Application ID: app-20260914172538-0018
+[2026-09-14 17:25:38] [INFO]     Executing Warm-up run...
+[2026-09-14 17:26:04] [INFO]     [Bitwise | Cores: 2 | Rep: 1] Wall: 7.402s | CPU: 5.729s | GC: 0.192s | Result: 161
+[2026-09-14 17:26:11] [INFO]     [String  | Cores: 2 | Rep: 1] Wall: 7.075s | CPU: 6.776s | GC: 0.157s | Result: 161
+[2026-09-14 17:27:45] [INFO]     [Pivot   | Cores: 2 | Rep: 1] Wall: 94.247s | ShuffRead: 1271.0MB | Result: 671851
+[2026-09-14 17:27:48] [INFO]     [FFill   | Cores: 2 | Rep: 1] Wall: 3.208s | CPU: 4.054s | Result: 671851
+[2026-09-14 17:27:56] [INFO]     [MLlib   | Cores: 2 | Rep: 1] Wall: 8.017s | CPU: 5.568s | Trees: 15
+[2026-09-14 17:27:59] [INFO] 
+>>> Initializing Spark Session with spark.cores.max = 4 ...
+[2026-09-14 17:28:00] [INFO]     Application ID: app-20260914172800-0019
+[2026-09-14 17:28:00] [INFO]     Executing Warm-up run...
+[2026-09-14 17:28:25] [INFO]     [Bitwise | Cores: 4 | Rep: 1] Wall: 6.110s | CPU: 7.119s | GC: 0.316s | Result: 161
+[2026-09-14 17:28:31] [INFO]     [String  | Cores: 4 | Rep: 1] Wall: 5.442s | CPU: 7.465s | GC: 0.287s | Result: 161
+[2026-09-14 17:29:26] [INFO]     [Pivot   | Cores: 4 | Rep: 1] Wall: 55.281s | ShuffRead: 1271.1MB | Result: 671851
+[2026-09-14 17:29:29] [INFO]     [FFill   | Cores: 4 | Rep: 1] Wall: 3.169s | CPU: 5.243s | Result: 671851
+[2026-09-14 17:29:37] [INFO]     [MLlib   | Cores: 4 | Rep: 1] Wall: 7.996s | CPU: 6.686s | Trees: 15
+[2026-09-14 17:29:40] [INFO] 
+>>> Initializing Spark Session with spark.cores.max = 6 ...
+[2026-09-14 17:29:41] [INFO]     Application ID: app-20260914172941-0020
+[2026-09-14 17:29:41] [INFO]     Executing Warm-up run...
+[2026-09-14 17:30:08] [INFO]     [Bitwise | Cores: 6 | Rep: 1] Wall: 10.952s | CPU: 7.796s | GC: 0.443s | Result: 161
+[2026-09-14 17:30:18] [INFO]     [String  | Cores: 6 | Rep: 1] Wall: 10.797s | CPU: 8.384s | GC: 0.320s | Result: 161
+[2026-09-14 17:31:18] [INFO]     [Pivot   | Cores: 6 | Rep: 1] Wall: 59.621s | ShuffRead: 1271.0MB | Result: 671851
+[2026-09-14 17:31:21] [INFO]     [FFill   | Cores: 6 | Rep: 1] Wall: 3.158s | CPU: 7.361s | Result: 671851
+[2026-09-14 17:31:29] [INFO]     [MLlib   | Cores: 6 | Rep: 1] Wall: 8.053s | CPU: 7.677s | Trees: 15
+[2026-09-14 17:31:32] [INFO] 
+================================================================================
+[2026-09-14 17:31:32] [INFO] RUNNING SPARK SQL SHUFFLE PARTITIONS TUNING (CORES = 6)
+[2026-09-14 17:31:32] [INFO] ================================================================================
+[2026-09-14 17:31:32] [INFO] 
+>>> Testing spark.sql.shuffle.partitions = 6 ...
+[2026-09-14 17:32:47] [INFO]     [ShufflePartitions: 6] Wall: 71.419s | Tasks: 47 | ShuffRead: 1269.8MB
+[2026-09-14 17:32:49] [INFO] 
+>>> Testing spark.sql.shuffle.partitions = 12 ...
+[2026-09-14 17:33:54] [INFO]     [ShufflePartitions: 12] Wall: 60.964s | Tasks: 65 | ShuffRead: 1271.0MB
+[2026-09-14 17:33:57] [INFO] 
+>>> Testing spark.sql.shuffle.partitions = 32 ...
+[2026-09-14 17:34:54] [INFO]     [ShufflePartitions: 32] Wall: 54.597s | Tasks: 125 | ShuffRead: 1272.6MB
+[2026-09-14 17:34:57] [INFO] 
+>>> Testing spark.sql.shuffle.partitions = 200 ...
+[2026-09-14 17:35:49] [INFO]     [ShufflePartitions: 200] Wall: 48.554s | Tasks: 629 | ShuffRead: 1275.0MB
+[2026-09-14 17:35:56] [INFO] 
+================================================================================
+[2026-09-14 17:35:56] [INFO] BENCHMARK SUMMARY (STRONG SCALING & METRICS)
+[2026-09-14 17:35:56] [INFO] ================================================================================
+[2026-09-14 17:35:56] [INFO] 
+                                    task_name  cores  wall_time_mean   speedup  efficiency  cpu_time_mean  gc_time_mean
+0             Task 1: Map-Bound (Bitwise 224)      1       11.907588  1.000000    1.000000       4.792359         0.229
+1             Task 1: Map-Bound (Bitwise 224)      2        7.401748  1.608754    0.804377       5.729268         0.192
+2             Task 1: Map-Bound (Bitwise 224)      4        6.109979  1.948875    0.487219       7.118539         0.316
+3             Task 1: Map-Bound (Bitwise 224)      6       10.952010  1.087251    0.181209       7.795709         0.443
+4        Task 1: Map-Bound (String Substring)      1       10.679339  1.000000    1.000000       4.625255         0.163
+5        Task 1: Map-Bound (String Substring)      2        7.074641  1.509524    0.754762       6.775989         0.157
+6        Task 1: Map-Bound (String Substring)      4        5.442377  1.962256    0.490564       7.465043         0.287
+7        Task 1: Map-Bound (String Substring)      6       10.796868  0.989115    0.164852       8.383585         0.320
+8    Task 2: Shuffle-Bound (Resample & Pivot)      1      151.061769  1.000000    1.000000     138.240249         1.015
+9    Task 2: Shuffle-Bound (Resample & Pivot)      2       94.246570  1.602836    0.801418     169.551275         1.408
+10   Task 2: Shuffle-Bound (Resample & Pivot)      4       55.281324  2.732600    0.683150     169.762454         1.476
+11   Task 2: Shuffle-Bound (Resample & Pivot)      6       59.620761  2.533711    0.422285     198.301614         1.629
+12         Task 3: Skew/Window (Forward-Fill)      1        3.968232  1.000000    1.000000       2.832824         0.015
+13         Task 3: Skew/Window (Forward-Fill)      2        3.207988  1.236985    0.618492       4.054149         0.050
+14         Task 3: Skew/Window (Forward-Fill)      4        3.168691  1.252326    0.313081       5.243053         0.131
+15         Task 3: Skew/Window (Forward-Fill)      6        3.158417  1.256399    0.209400       7.361009         0.037
+16  Task 4: Distributed MLlib (Random Forest)      1        9.251725  1.000000    1.000000       2.768613         0.052
+17  Task 4: Distributed MLlib (Random Forest)      2        8.016928  1.154024    0.577012       5.568103         0.094
+18  Task 4: Distributed MLlib (Random Forest)      4        7.995986  1.157046    0.289262       6.685810         0.046
+19  Task 4: Distributed MLlib (Random Forest)      6        8.052751  1.148890    0.191482       7.677097         0.185
+[2026-09-14 17:35:56] [INFO] 
+Saved CSV to: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_summary.csv
+[2026-09-14 17:35:56] [INFO] Saved JSON to: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_results.json
+[2026-09-14 17:35:56] [INFO] Saved Log to: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_20260914_172104.log
+[2026-09-14 17:36:01] [INFO] Generated Plot 1: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_plots/plot1_bitwise_vs_string.png
+[2026-09-14 17:36:02] [INFO] Generated Plot 2: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_plots/plot2_strong_scaling_speedup.png
+[2026-09-14 17:36:05] [INFO] Generated Plot 3: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_plots/plot3_parallel_efficiency.png
+[2026-09-14 17:36:06] [INFO] Generated Plot 4: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_plots/plot4_shuffle_partitions_tuning.png
+[2026-09-14 17:36:16] [INFO] Generated Plot 5: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_plots/plot5_metrics_breakdown.png
+[2026-09-14 17:36:16] [INFO] 
+ALL BENCHMARKS AND VISUALIZATIONS COMPLETED SUCCESSFULLY!

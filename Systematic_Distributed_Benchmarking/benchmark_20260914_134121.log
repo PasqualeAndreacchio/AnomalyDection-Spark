@@ -1,0 +1,177 @@
+[2026-09-14 13:41:21] [INFO] ================================================================================
+[2026-09-14 13:41:21] [INFO] STARTING SYSTEMATIC DISTRIBUTED SPARK BENCHMARK (TASK 3.3.3)
+[2026-09-14 13:41:21] [INFO] Data source: s3a://MAPDB-Group5/data_parquet
+[2026-09-14 13:41:21] [INFO] Cores configurations: [1, 2, 4, 6]
+[2026-09-14 13:41:21] [INFO] Repetitions per test: 5
+[2026-09-14 13:41:21] [INFO] Output directory: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking
+[2026-09-14 13:41:21] [INFO] Log file: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_20260914_134121.log
+[2026-09-14 13:41:21] [INFO] ================================================================================
+[2026-09-14 13:41:21] [INFO] 
+>>> Initializing Spark Session with spark.cores.max = 1 ...
+[2026-09-14 13:41:46] [INFO]     Application ID: app-20260914134141-0008
+[2026-09-14 13:41:46] [INFO]     Executing Warm-up run...
+[2026-09-14 13:42:49] [INFO]     [Bitwise | Cores: 1 | Rep: 1] Wall: 31.493s | CPU: 5.941s | GC: 0.203s | Result: 161
+[2026-09-14 13:43:19] [INFO]     [Bitwise | Cores: 1 | Rep: 2] Wall: 30.002s | CPU: 5.440s | GC: 0.189s | Result: 161
+[2026-09-14 13:44:01] [INFO]     [Bitwise | Cores: 1 | Rep: 3] Wall: 41.984s | CPU: 5.247s | GC: 0.126s | Result: 161
+[2026-09-14 13:44:42] [INFO]     [Bitwise | Cores: 1 | Rep: 4] Wall: 41.120s | CPU: 5.396s | GC: 0.129s | Result: 161
+[2026-09-14 13:45:24] [INFO]     [Bitwise | Cores: 1 | Rep: 5] Wall: 41.059s | CPU: 5.196s | GC: 0.101s | Result: 161
+[2026-09-14 13:46:05] [INFO]     [String  | Cores: 1 | Rep: 1] Wall: 41.424s | CPU: 8.267s | GC: 0.176s | Result: 161
+[2026-09-14 13:46:25] [INFO]     [String  | Cores: 1 | Rep: 2] Wall: 19.788s | CPU: 8.087s | GC: 0.216s | Result: 161
+[2026-09-14 13:46:41] [INFO]     [String  | Cores: 1 | Rep: 3] Wall: 16.632s | CPU: 8.020s | GC: 0.177s | Result: 161
+[2026-09-14 13:46:59] [INFO]     [String  | Cores: 1 | Rep: 4] Wall: 17.180s | CPU: 7.915s | GC: 0.151s | Result: 161
+[2026-09-14 13:47:15] [INFO]     [String  | Cores: 1 | Rep: 5] Wall: 15.934s | CPU: 8.075s | GC: 0.139s | Result: 161
+[2026-09-14 13:50:48] [INFO]     [Pivot   | Cores: 1 | Rep: 1] Wall: 213.619s | ShuffRead: 1271.0MB | Result: 671851
+[2026-09-14 13:50:49] [INFO]     [Pivot   | Cores: 1 | Rep: 2] Wall: 0.972s | ShuffRead: 0.0MB | Result: 671851
+[2026-09-14 13:50:50] [INFO]     [Pivot   | Cores: 1 | Rep: 3] Wall: 0.818s | ShuffRead: 0.0MB | Result: 671851
+[2026-09-14 13:50:51] [INFO]     [Pivot   | Cores: 1 | Rep: 4] Wall: 0.849s | ShuffRead: 0.0MB | Result: 671851
+[2026-09-14 13:50:52] [INFO]     [Pivot   | Cores: 1 | Rep: 5] Wall: 0.703s | ShuffRead: 0.0MB | Result: 671851
+[2026-09-14 13:50:57] [INFO]     [FFill   | Cores: 1 | Rep: 1] Wall: 4.897s | CPU: 3.816s | Result: 671851
+[2026-09-14 13:50:57] [INFO]     [FFill   | Cores: 1 | Rep: 2] Wall: 0.325s | CPU: 0.039s | Result: 671851
+[2026-09-14 13:50:57] [INFO]     [FFill   | Cores: 1 | Rep: 3] Wall: 0.371s | CPU: 0.043s | Result: 671851
+[2026-09-14 13:50:58] [INFO]     [FFill   | Cores: 1 | Rep: 4] Wall: 0.590s | CPU: 0.045s | Result: 671851
+[2026-09-14 13:50:59] [INFO]     [FFill   | Cores: 1 | Rep: 5] Wall: 0.390s | CPU: 0.046s | Result: 671851
+[2026-09-14 13:51:10] [INFO]     [MLlib   | Cores: 1 | Rep: 1] Wall: 11.192s | CPU: 3.431s | Trees: 15
+[2026-09-14 13:51:15] [INFO]     [MLlib   | Cores: 1 | Rep: 2] Wall: 4.975s | CPU: 1.695s | Trees: 15
+[2026-09-14 13:51:19] [INFO]     [MLlib   | Cores: 1 | Rep: 3] Wall: 4.268s | CPU: 1.590s | Trees: 15
+[2026-09-14 13:51:23] [INFO]     [MLlib   | Cores: 1 | Rep: 4] Wall: 4.222s | CPU: 1.526s | Trees: 15
+[2026-09-14 13:51:28] [INFO]     [MLlib   | Cores: 1 | Rep: 5] Wall: 4.091s | CPU: 1.466s | Trees: 15
+[2026-09-14 13:51:30] [INFO] 
+>>> Initializing Spark Session with spark.cores.max = 2 ...
+[2026-09-14 13:51:36] [INFO]     Application ID: app-20260914135136-0009
+[2026-09-14 13:51:36] [INFO]     Executing Warm-up run...
+[2026-09-14 13:52:09] [INFO]     [Bitwise | Cores: 2 | Rep: 1] Wall: 9.242s | CPU: 5.717s | GC: 0.180s | Result: 161
+[2026-09-14 13:52:18] [INFO]     [Bitwise | Cores: 2 | Rep: 2] Wall: 8.406s | CPU: 5.242s | GC: 0.138s | Result: 161
+[2026-09-14 13:52:25] [INFO]     [Bitwise | Cores: 2 | Rep: 3] Wall: 7.674s | CPU: 5.013s | GC: 0.133s | Result: 161
+[2026-09-14 13:52:33] [INFO]     [Bitwise | Cores: 2 | Rep: 4] Wall: 7.496s | CPU: 4.570s | GC: 0.127s | Result: 161
+[2026-09-14 13:52:40] [INFO]     [Bitwise | Cores: 2 | Rep: 5] Wall: 7.362s | CPU: 4.520s | GC: 0.110s | Result: 161
+[2026-09-14 13:52:49] [INFO]     [String  | Cores: 2 | Rep: 1] Wall: 8.325s | CPU: 6.611s | GC: 0.168s | Result: 161
+[2026-09-14 13:52:57] [INFO]     [String  | Cores: 2 | Rep: 2] Wall: 7.912s | CPU: 6.192s | GC: 0.120s | Result: 161
+[2026-09-14 13:53:04] [INFO]     [String  | Cores: 2 | Rep: 3] Wall: 7.269s | CPU: 5.890s | GC: 0.115s | Result: 161
+[2026-09-14 13:53:12] [INFO]     [String  | Cores: 2 | Rep: 4] Wall: 8.108s | CPU: 6.016s | GC: 0.134s | Result: 161
+[2026-09-14 13:53:19] [INFO]     [String  | Cores: 2 | Rep: 5] Wall: 7.398s | CPU: 6.002s | GC: 0.121s | Result: 161
+[2026-09-14 13:54:52] [INFO]     [Pivot   | Cores: 2 | Rep: 1] Wall: 92.976s | ShuffRead: 1271.0MB | Result: 671851
+[2026-09-14 13:54:53] [INFO]     [Pivot   | Cores: 2 | Rep: 2] Wall: 0.647s | ShuffRead: 0.0MB | Result: 671851
+[2026-09-14 13:54:54] [INFO]     [Pivot   | Cores: 2 | Rep: 3] Wall: 0.744s | ShuffRead: 0.0MB | Result: 671851
+[2026-09-14 13:54:54] [INFO]     [Pivot   | Cores: 2 | Rep: 4] Wall: 0.484s | ShuffRead: 0.0MB | Result: 671851
+[2026-09-14 13:54:55] [INFO]     [Pivot   | Cores: 2 | Rep: 5] Wall: 0.518s | ShuffRead: 0.0MB | Result: 671851
+[2026-09-14 13:54:58] [INFO]     [FFill   | Cores: 2 | Rep: 1] Wall: 2.870s | CPU: 3.929s | Result: 671851
+[2026-09-14 13:54:58] [INFO]     [FFill   | Cores: 2 | Rep: 2] Wall: 0.290s | CPU: 0.051s | Result: 671851
+[2026-09-14 13:54:58] [INFO]     [FFill   | Cores: 2 | Rep: 3] Wall: 0.221s | CPU: 0.042s | Result: 671851
+[2026-09-14 13:54:59] [INFO]     [FFill   | Cores: 2 | Rep: 4] Wall: 0.270s | CPU: 0.043s | Result: 671851
+[2026-09-14 13:54:59] [INFO]     [FFill   | Cores: 2 | Rep: 5] Wall: 0.245s | CPU: 0.047s | Result: 671851
+[2026-09-14 13:55:06] [INFO]     [MLlib   | Cores: 2 | Rep: 1] Wall: 6.604s | CPU: 4.742s | Trees: 15
+[2026-09-14 13:55:09] [INFO]     [MLlib   | Cores: 2 | Rep: 2] Wall: 3.055s | CPU: 1.598s | Trees: 15
+[2026-09-14 13:55:12] [INFO]     [MLlib   | Cores: 2 | Rep: 3] Wall: 3.569s | CPU: 1.511s | Trees: 15
+[2026-09-14 13:55:16] [INFO]     [MLlib   | Cores: 2 | Rep: 4] Wall: 3.819s | CPU: 1.461s | Trees: 15
+[2026-09-14 13:55:19] [INFO]     [MLlib   | Cores: 2 | Rep: 5] Wall: 3.163s | CPU: 1.568s | Trees: 15
+[2026-09-14 13:55:22] [INFO] 
+>>> Initializing Spark Session with spark.cores.max = 4 ...
+[2026-09-14 13:55:27] [INFO]     Application ID: app-20260914135527-0010
+[2026-09-14 13:55:27] [INFO]     Executing Warm-up run...
+[2026-09-14 13:55:53] [INFO]     [Bitwise | Cores: 4 | Rep: 1] Wall: 5.652s | CPU: 6.488s | GC: 0.234s | Result: 161
+[2026-09-14 13:55:58] [INFO]     [Bitwise | Cores: 4 | Rep: 2] Wall: 4.391s | CPU: 5.636s | GC: 0.180s | Result: 161
+[2026-09-14 13:56:02] [INFO]     [Bitwise | Cores: 4 | Rep: 3] Wall: 4.276s | CPU: 4.775s | GC: 0.141s | Result: 161
+[2026-09-14 13:56:06] [INFO]     [Bitwise | Cores: 4 | Rep: 4] Wall: 3.827s | CPU: 5.179s | GC: 0.146s | Result: 161
+[2026-09-14 13:56:10] [INFO]     [Bitwise | Cores: 4 | Rep: 5] Wall: 4.045s | CPU: 4.883s | GC: 0.153s | Result: 161
+[2026-09-14 13:56:16] [INFO]     [String  | Cores: 4 | Rep: 1] Wall: 4.859s | CPU: 7.178s | GC: 0.238s | Result: 161
+[2026-09-14 13:56:20] [INFO]     [String  | Cores: 4 | Rep: 2] Wall: 4.844s | CPU: 7.319s | GC: 0.182s | Result: 161
+[2026-09-14 13:56:25] [INFO]     [String  | Cores: 4 | Rep: 3] Wall: 4.398s | CPU: 7.334s | GC: 0.190s | Result: 161
+[2026-09-14 13:56:29] [INFO]     [String  | Cores: 4 | Rep: 4] Wall: 4.621s | CPU: 6.653s | GC: 0.172s | Result: 161
+[2026-09-14 13:56:34] [INFO]     [String  | Cores: 4 | Rep: 5] Wall: 4.538s | CPU: 6.659s | GC: 0.194s | Result: 161
+[2026-09-14 13:57:35] [INFO]     [Pivot   | Cores: 4 | Rep: 1] Wall: 61.072s | ShuffRead: 1271.1MB | Result: 671851
+[2026-09-14 13:57:47] [INFO]     [Pivot   | Cores: 4 | Rep: 2] Wall: 12.307s | ShuffRead: 0.0MB | Result: 671851
+[2026-09-14 13:57:48] [INFO]     [Pivot   | Cores: 4 | Rep: 3] Wall: 0.784s | ShuffRead: 0.0MB | Result: 671851
+[2026-09-14 13:57:49] [INFO]     [Pivot   | Cores: 4 | Rep: 4] Wall: 0.597s | ShuffRead: 0.0MB | Result: 671851
+[2026-09-14 13:57:49] [INFO]     [Pivot   | Cores: 4 | Rep: 5] Wall: 0.559s | ShuffRead: 0.0MB | Result: 671851
+[2026-09-14 13:57:52] [INFO]     [FFill   | Cores: 4 | Rep: 1] Wall: 2.695s | CPU: 5.146s | Result: 671851
+[2026-09-14 13:57:52] [INFO]     [FFill   | Cores: 4 | Rep: 2] Wall: 0.193s | CPU: 0.054s | Result: 671851
+[2026-09-14 13:57:53] [INFO]     [FFill   | Cores: 4 | Rep: 3] Wall: 0.204s | CPU: 0.041s | Result: 671851
+[2026-09-14 13:57:53] [INFO]     [FFill   | Cores: 4 | Rep: 4] Wall: 0.234s | CPU: 0.044s | Result: 671851
+[2026-09-14 13:57:53] [INFO]     [FFill   | Cores: 4 | Rep: 5] Wall: 0.212s | CPU: 0.045s | Result: 671851
+[2026-09-14 13:58:00] [INFO]     [MLlib   | Cores: 4 | Rep: 1] Wall: 6.694s | CPU: 6.456s | Trees: 15
+[2026-09-14 13:58:02] [INFO]     [MLlib   | Cores: 4 | Rep: 2] Wall: 2.544s | CPU: 2.000s | Trees: 15
+[2026-09-14 13:58:05] [INFO]     [MLlib   | Cores: 4 | Rep: 3] Wall: 2.376s | CPU: 1.716s | Trees: 15
+[2026-09-14 13:58:07] [INFO]     [MLlib   | Cores: 4 | Rep: 4] Wall: 2.270s | CPU: 1.562s | Trees: 15
+[2026-09-14 13:58:09] [INFO]     [MLlib   | Cores: 4 | Rep: 5] Wall: 2.026s | CPU: 1.410s | Trees: 15
+[2026-09-14 13:58:12] [INFO] 
+>>> Initializing Spark Session with spark.cores.max = 6 ...
+[2026-09-14 13:58:19] [INFO]     Application ID: app-20260914135819-0011
+[2026-09-14 13:58:19] [INFO]     Executing Warm-up run...
+[2026-09-14 13:58:50] [INFO]     [Bitwise | Cores: 6 | Rep: 1] Wall: 4.240s | CPU: 6.402s | GC: 0.281s | Result: 161
+[2026-09-14 13:58:53] [INFO]     [Bitwise | Cores: 6 | Rep: 2] Wall: 3.233s | CPU: 4.967s | GC: 0.164s | Result: 161
+[2026-09-14 13:58:56] [INFO]     [Bitwise | Cores: 6 | Rep: 3] Wall: 3.168s | CPU: 4.398s | GC: 0.146s | Result: 161
+[2026-09-14 13:58:59] [INFO]     [Bitwise | Cores: 6 | Rep: 4] Wall: 3.002s | CPU: 4.478s | GC: 0.140s | Result: 161
+[2026-09-14 13:59:02] [INFO]     [Bitwise | Cores: 6 | Rep: 5] Wall: 2.790s | CPU: 4.029s | GC: 0.126s | Result: 161
+[2026-09-14 13:59:06] [INFO]     [String  | Cores: 6 | Rep: 1] Wall: 3.687s | CPU: 6.757s | GC: 0.348s | Result: 161
+[2026-09-14 13:59:09] [INFO]     [String  | Cores: 6 | Rep: 2] Wall: 3.139s | CPU: 5.800s | GC: 0.223s | Result: 161
+[2026-09-14 13:59:13] [INFO]     [String  | Cores: 6 | Rep: 3] Wall: 3.433s | CPU: 6.199s | GC: 0.248s | Result: 161
+[2026-09-14 13:59:16] [INFO]     [String  | Cores: 6 | Rep: 4] Wall: 3.342s | CPU: 5.835s | GC: 0.244s | Result: 161
+[2026-09-14 13:59:19] [INFO]     [String  | Cores: 6 | Rep: 5] Wall: 3.174s | CPU: 6.480s | GC: 0.198s | Result: 161
+[2026-09-14 14:00:06] [INFO]     [Pivot   | Cores: 6 | Rep: 1] Wall: 46.725s | ShuffRead: 1271.0MB | Result: 671851
+[2026-09-14 14:00:06] [INFO]     [Pivot   | Cores: 6 | Rep: 2] Wall: 0.546s | ShuffRead: 0.0MB | Result: 671851
+[2026-09-14 14:00:07] [INFO]     [Pivot   | Cores: 6 | Rep: 3] Wall: 0.666s | ShuffRead: 0.0MB | Result: 671851
+[2026-09-14 14:00:08] [INFO]     [Pivot   | Cores: 6 | Rep: 4] Wall: 0.511s | ShuffRead: 0.0MB | Result: 671851
+[2026-09-14 14:00:08] [INFO]     [Pivot   | Cores: 6 | Rep: 5] Wall: 0.583s | ShuffRead: 0.0MB | Result: 671851
+[2026-09-14 14:00:11] [INFO]     [FFill   | Cores: 6 | Rep: 1] Wall: 2.372s | CPU: 5.986s | Result: 671851
+[2026-09-14 14:00:11] [INFO]     [FFill   | Cores: 6 | Rep: 2] Wall: 0.170s | CPU: 0.054s | Result: 671851
+[2026-09-14 14:00:11] [INFO]     [FFill   | Cores: 6 | Rep: 3] Wall: 0.180s | CPU: 0.043s | Result: 671851
+[2026-09-14 14:00:11] [INFO]     [FFill   | Cores: 6 | Rep: 4] Wall: 0.191s | CPU: 0.037s | Result: 671851
+[2026-09-14 14:00:11] [INFO]     [FFill   | Cores: 6 | Rep: 5] Wall: 0.140s | CPU: 0.038s | Result: 671851
+[2026-09-14 14:00:17] [INFO]     [MLlib   | Cores: 6 | Rep: 1] Wall: 5.714s | CPU: 6.500s | Trees: 15
+[2026-09-14 14:00:20] [INFO]     [MLlib   | Cores: 6 | Rep: 2] Wall: 2.349s | CPU: 1.760s | Trees: 15
+[2026-09-14 14:00:22] [INFO]     [MLlib   | Cores: 6 | Rep: 3] Wall: 2.389s | CPU: 1.636s | Trees: 15
+[2026-09-14 14:00:25] [INFO]     [MLlib   | Cores: 6 | Rep: 4] Wall: 2.610s | CPU: 1.882s | Trees: 15
+[2026-09-14 14:00:27] [INFO]     [MLlib   | Cores: 6 | Rep: 5] Wall: 2.071s | CPU: 1.438s | Trees: 15
+[2026-09-14 14:00:29] [INFO] 
+================================================================================
+[2026-09-14 14:00:29] [INFO] RUNNING SPARK SQL SHUFFLE PARTITIONS TUNING (CORES = 6)
+[2026-09-14 14:00:29] [INFO] ================================================================================
+[2026-09-14 14:00:29] [INFO] 
+>>> Testing spark.sql.shuffle.partitions = 6 ...
+[2026-09-14 14:01:48] [INFO]     [ShufflePartitions: 6] Wall: 74.320s | Tasks: 47 | ShuffRead: 1269.8MB
+[2026-09-14 14:01:50] [INFO] 
+>>> Testing spark.sql.shuffle.partitions = 12 ...
+[2026-09-14 14:03:06] [INFO]     [ShufflePartitions: 12] Wall: 70.507s | Tasks: 65 | ShuffRead: 1271.0MB
+[2026-09-14 14:03:08] [INFO] 
+>>> Testing spark.sql.shuffle.partitions = 32 ...
+[2026-09-14 14:04:05] [INFO]     [ShufflePartitions: 32] Wall: 52.375s | Tasks: 125 | ShuffRead: 1272.6MB
+[2026-09-14 14:04:07] [INFO] 
+>>> Testing spark.sql.shuffle.partitions = 200 ...
+[2026-09-14 14:05:21] [INFO]     [ShufflePartitions: 200] Wall: 70.479s | Tasks: 629 | ShuffRead: 1275.0MB
+[2026-09-14 14:05:26] [INFO] 
+================================================================================
+[2026-09-14 14:05:26] [INFO] BENCHMARK SUMMARY (STRONG SCALING & METRICS)
+[2026-09-14 14:05:26] [INFO] ================================================================================
+[2026-09-14 14:05:26] [INFO] 
+                                    task_name  cores  wall_time_mean    speedup  efficiency  cpu_time_mean  gc_time_mean
+0             Task 1: Map-Bound (Bitwise 224)      1       37.131730   1.000000    1.000000       5.444191        0.1496
+1             Task 1: Map-Bound (Bitwise 224)      2        8.036001   4.620673    2.310336       5.012130        0.1376
+2             Task 1: Map-Bound (Bitwise 224)      4        4.438406   8.366005    2.091501       5.392292        0.1708
+3             Task 1: Map-Bound (Bitwise 224)      6        3.286438  11.298472    1.883079       4.854854        0.1714
+4        Task 1: Map-Bound (String Substring)      1       22.191513   1.000000    1.000000       8.072712        0.1718
+5        Task 1: Map-Bound (String Substring)      2        7.802487   2.844159    1.422080       6.142216        0.1316
+6        Task 1: Map-Bound (String Substring)      4        4.652089   4.770225    1.192556       7.028693        0.1952
+7        Task 1: Map-Bound (String Substring)      6        3.354904   6.614650    1.102442       6.213911        0.2522
+8    Task 2: Shuffle-Bound (Resample & Pivot)      1       43.392123   1.000000    1.000000      37.889807        0.3160
+9    Task 2: Shuffle-Bound (Resample & Pivot)      2       19.073742   2.274966    1.137483      32.820826        0.2470
+10   Task 2: Shuffle-Bound (Resample & Pivot)      4       15.063884   2.880540    0.720135      34.752145        0.3974
+11   Task 2: Shuffle-Bound (Resample & Pivot)      6        9.806265   4.424939    0.737490      35.978544        0.3654
+12         Task 3: Skew/Window (Forward-Fill)      1        1.314568   1.000000    1.000000       0.797602        0.0092
+13         Task 3: Skew/Window (Forward-Fill)      2        0.779173   1.687132    0.843566       0.822333        0.0076
+14         Task 3: Skew/Window (Forward-Fill)      4        0.707529   1.857970    0.464493       1.065904        0.0230
+15         Task 3: Skew/Window (Forward-Fill)      6        0.610424   2.153533    0.358922       1.231744        0.0102
+16  Task 4: Distributed MLlib (Random Forest)      1        5.749483   1.000000    1.000000       1.941590        0.0356
+17  Task 4: Distributed MLlib (Random Forest)      2        4.041891   1.422473    0.711237       2.176170        0.0314
+18  Task 4: Distributed MLlib (Random Forest)      4        3.182065   1.806840    0.451710       2.628804        0.0680
+19  Task 4: Distributed MLlib (Random Forest)      6        3.026578   1.899665    0.316611       2.643354        0.0634
+[2026-09-14 14:05:26] [INFO] 
+Saved CSV to: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_summary.csv
+[2026-09-14 14:05:26] [INFO] Saved JSON to: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_results.json
+[2026-09-14 14:05:26] [INFO] Saved Log to: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_20260914_134121.log
+[2026-09-14 14:05:29] [INFO] Generated Plot 1: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_plots/plot1_bitwise_vs_string.png
+[2026-09-14 14:05:30] [INFO] Generated Plot 2: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_plots/plot2_strong_scaling_speedup.png
+[2026-09-14 14:05:31] [INFO] Generated Plot 3: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_plots/plot3_parallel_efficiency.png
+[2026-09-14 14:05:32] [INFO] Generated Plot 4: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_plots/plot4_shuffle_partitions_tuning.png
+[2026-09-14 14:05:33] [INFO] Generated Plot 5: /home/nlavarda/AnomalyDection-Spark/Systematic_Distributed_Benchmarking/benchmark_plots/plot5_metrics_breakdown.png
+[2026-09-14 14:05:33] [INFO] 
+ALL BENCHMARKS AND VISUALIZATIONS COMPLETED SUCCESSFULLY!
