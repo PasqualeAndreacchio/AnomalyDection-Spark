@@ -267,40 +267,21 @@ def run_switch_counts(df_aggregated, target_metrics):
         sf.date_trunc("hour", sf.col("timestamp_bucket"))
     )
 
-    df_grouped = df_anomaly1.groupBy("hour_bucket", "hwid", "metric").agg(
-        sf.collect_list(
-            sf.struct("timestamp_bucket", "aggregated_value")
-        ).alias("time_series")
+    w = Window.partitionBy("hwid", "metric").orderBy("timestamp_bucket")
+    
+    df_hourly_frequency = (
+        df_anomaly1.filter(sf.col("metric").isin(target_metrics))
+        .withColumn("prev_val", sf.lag("aggregated_value", 1).over(w))
+        .withColumn(
+            "is_switch",
+            sf.when(
+                sf.col("prev_val").isNotNull() & (sf.col("aggregated_value") != sf.col("prev_val")),
+                1,
+            ).otherwise(0),
+        )
+        .groupBy("hour_bucket", "hwid", "metric")
+        .agg(sf.sum("is_switch").alias("total_state_switches"))
     )
-
-    # Sort the 60-minute array chronologically 
-    df_sorted = df_grouped.withColumn(
-        "time_series_sorted", 
-        sf.array_sort("time_series")
-    )
-
-    # UDF to count the switches in that small list
-    def count_switches(time_series):
-        if not time_series or len(time_series) < 2:
-            return 0
-        switches = 0
-        # Iterate through the minutes in the hour
-        for i in range(1, len(time_series)):
-            # Compare current minute's value to the previous minute's value
-            if time_series[i].aggregated_value != time_series[i-1].aggregated_value:
-                switches += 1
-        return switches
-
-    # Register the Python function as a PySpark UDF
-    count_switches_udf = sf.udf(count_switches, IntegerType())
-
-    df_hourly_frequency = df_sorted.withColumn(
-        "total_state_switches", 
-        sf.when(
-            sf.col("metric").isin(target_metrics), 
-            count_switches_udf(sf.col("time_series_sorted"))
-        ).otherwise(sf.lit(None))
-    ).drop("time_series_sorted", "time_series") # Clean up the temporary columns
 
     return df_anomaly1, df_hourly_frequency
 
@@ -411,13 +392,6 @@ def main():
         except Exception as e:
             print(f"    Warm-up error: {e}", flush=True)
 
-        # ------------------------------------------------------------------
-        # Build df_aggregated: 1-minute temporal resampling of raw parquet
-        # This mirrors the notebook preprocessing (cells 4-6) and is the
-        # input DataFrame that Tasks 5A/5B/5C operate on.
-        # ------------------------------------------------------------------
-        print("    Building df_aggregated (1-min resampling)...", flush=True)
-
         continuous_metrics = [
             'E1', 'E2',
             'S19', 'S37', 'S39', 'S40', 'S41', 'S42', 'S43', 'S45', 'S46', 'S47', 'S49', 'S50',
@@ -430,34 +404,10 @@ def main():
             'S178', 'S180', 'S181'
         ]
 
-        df_spark = spark.read.parquet(s3_parquet_path)
-
-        # Convert UNIX-millis timestamp and bucket to 1-minute intervals
-        df_spark = df_spark.withColumn(
-            "when", sf.timestamp_millis(sf.col("when").cast("long"))
-        ).withColumn(
-            "timestamp_bucket", sf.date_trunc("minute", "when")
-        )
-
-        # Aggregate: mean for continuous metrics, max for discrete/status metrics
-        df_aggregated = (
-            df_spark.groupBy("timestamp_bucket", "hwid", "metric")
-            .agg(
-                sf.coalesce(
-                    sf.mean(sf.when(sf.col("metric").isin(continuous_metrics), sf.col("value"))),
-                    sf.max(sf.col("value"))
-                ).alias("aggregated_value")
-            )
-        ).cache()
-
-        # Materialise the cache so that subsequent tasks benchmark only their own logic
-        df_aggregated.count()
-        print("    df_aggregated cached and materialised.", flush=True)
-
         # ----------------------------------------------------------------------
         # CORRELATION PIPELINE BENCHMARK
-        # Runs the full pipeline:  df_aggregated (cached)
-        #   → run_switch_counts → run_group_and_join → run_correlation
+        # Runs the full pipeline from raw parquet:
+        #   parquet -> df_aggregated -> run_switch_counts -> run_group_and_join -> run_correlation
         # No intermediate caching, so Spark must recompute the entire DAG
         # on every repeat — giving a genuine scaling measurement.
         # ----------------------------------------------------------------------
@@ -465,7 +415,28 @@ def main():
             start_stage = get_current_max_stage(app_id)
             t0 = time.perf_counter()
 
-            # Stage 1: Switch Counts (from cached df_aggregated)
+            # Build df_aggregated: 1-minute temporal resampling of raw parquet
+            df_spark = spark.read.parquet(s3_parquet_path)
+            
+            # Convert UNIX-millis timestamp and bucket to 1-minute intervals
+            df_spark = df_spark.withColumn(
+                "when", sf.timestamp_millis(sf.col("when").cast("long"))
+            ).withColumn(
+                "timestamp_bucket", sf.date_trunc("minute", "when")
+            )
+
+            # Aggregate: mean for continuous metrics, max for discrete/status metrics
+            df_aggregated = (
+                df_spark.groupBy("timestamp_bucket", "hwid", "metric")
+                .agg(
+                    sf.coalesce(
+                        sf.mean(sf.when(sf.col("metric").isin(continuous_metrics), sf.col("value"))),
+                        sf.max(sf.col("value"))
+                    ).alias("aggregated_value")
+                )
+            )
+
+            # Stage 1: Switch Counts
             df_anomaly1, df_hourly_frequency = run_switch_counts(
                 df_aggregated, target_metrics
             )
@@ -511,8 +482,7 @@ def main():
                 flush=True,
             )
 
-        # Clean up cached DataFrames before stopping the session
-        df_aggregated.unpersist()
+        # Clean up before stopping the session
         spark.stop()
         time.sleep(2)
 
@@ -553,8 +523,7 @@ def main():
                         sf.max(sf.col("value"))
                     ).alias("aggregated_value")
                 )
-            ).cache()
-            df_agg_shuff.count()
+            )
 
             # --- Full pipeline: Switch Counts → Group & Join → Correlation ---
             start_stage = get_current_max_stage(app_id)
@@ -585,7 +554,6 @@ def main():
             print(f"    [ShufflePartitions: {p}] Wall: {rec['wall_time_total']:.3f}s | Tasks: {rec['num_tasks']} | ShuffRead: {rec['shuffle_read_bytes']/(1024**2):.1f}MB", flush=True)
 
             # Clean up
-            df_agg_shuff.unpersist()
             spark.stop()
             time.sleep(2)
 
