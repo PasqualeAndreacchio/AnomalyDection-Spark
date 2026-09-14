@@ -379,6 +379,18 @@ def main():
 
     benchmark_records = []
 
+    continuous_metrics = [
+        'E1', 'E2',
+        'S19', 'S37', 'S39', 'S40', 'S41', 'S42', 'S43', 'S45', 'S46', 'S47', 'S49', 'S50',
+        'S69', 'S70', 'S71', 'S72', 'S80', 'S81', 'S83', 'S86', 'S90', 'S94', 'S97',
+        'S100', 'S101', 'S102', 'S106', 'S107', 'S108', 'S109', 'S110',
+        'S122', 'S124', 'S125', 'S126', 'S128', 'S129',
+        'S137', 'S138', 'S140', 'S143', 'S147',
+        'S151', 'S154', 'S157', 'S158', 'S159',
+        'S163', 'S164', 'S165', 'S166', 'S167',
+        'S178', 'S180', 'S181'
+    ]
+
     for n_cores in args.cores:
         print(f"\n>>> Initializing Spark Session with spark.cores.max = {n_cores} ...", flush=True)
         spark = get_spark_session(cores_max=n_cores, shuffle_partitions=12)
@@ -391,18 +403,6 @@ def main():
             spark.read.parquet(s3_parquet_path).limit(100).count()
         except Exception as e:
             print(f"    Warm-up error: {e}", flush=True)
-
-        continuous_metrics = [
-            'E1', 'E2',
-            'S19', 'S37', 'S39', 'S40', 'S41', 'S42', 'S43', 'S45', 'S46', 'S47', 'S49', 'S50',
-            'S69', 'S70', 'S71', 'S72', 'S80', 'S81', 'S83', 'S86', 'S90', 'S94', 'S97',
-            'S100', 'S101', 'S102', 'S106', 'S107', 'S108', 'S109', 'S110',
-            'S122', 'S124', 'S125', 'S126', 'S128', 'S129',
-            'S137', 'S138', 'S140', 'S143', 'S147',
-            'S151', 'S154', 'S157', 'S158', 'S159',
-            'S163', 'S164', 'S165', 'S166', 'S167',
-            'S178', 'S180', 'S181'
-        ]
 
         # ----------------------------------------------------------------------
         # CORRELATION PIPELINE BENCHMARK
@@ -508,6 +508,10 @@ def main():
             except Exception as e:
                 print(f"    Warm-up error: {e}", flush=True)
 
+            # --- Full pipeline: Switch Counts → Group & Join → Correlation ---
+            start_stage = get_current_max_stage(app_id)
+            t0 = time.perf_counter()
+
             # Build df_aggregated for this session
             df_spark_shuff = spark.read.parquet(s3_parquet_path)
             df_spark_shuff = df_spark_shuff.withColumn(
@@ -524,10 +528,6 @@ def main():
                     ).alias("aggregated_value")
                 )
             )
-
-            # --- Full pipeline: Switch Counts → Group & Join → Correlation ---
-            start_stage = get_current_max_stage(app_id)
-            t0 = time.perf_counter()
 
             df_anomaly1_sh, df_hourly_freq_sh = run_switch_counts(df_agg_shuff, target_metrics)
             df_joined_sh, _, sensor_codes_sh = run_group_and_join(
