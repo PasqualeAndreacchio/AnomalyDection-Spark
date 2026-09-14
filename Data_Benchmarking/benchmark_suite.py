@@ -258,7 +258,7 @@ def main():
     parser.add_argument("--shuffle-test", action="store_true", default=True,
                         help="Also test shuffle partitions tuning (6, 12, 32, 200)")
     parser.add_argument("--output-dir", type=str,
-                        default="/opt/mapd-project/Data_Benchmarking",
+                        default="/opt/mapd-project/Data_Benchmarking_Final",
                         help="Output directory for CSV, JSON and plots")
     args = parser.parse_args()
 
