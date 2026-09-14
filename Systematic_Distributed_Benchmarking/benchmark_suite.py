@@ -248,7 +248,7 @@ def run_task4_distributed_mllib(spark, df_filled):
         sf.col("is_overheated").cast("double").alias("label")
     )
 
-    # Balanced sample cached to memory to benchmark distributed tree split search without lineage recomputation
+    # Cache balanced sample for tree benchmark
     df_train = df_ml.sampleBy("label", fractions={0.0: 0.10, 1.0: 1.0}, seed=42).cache()
     df_train.count()
 
@@ -287,10 +287,10 @@ def run_switch_counts(df_aggregated, target_metrics):
 
 def run_group_and_join(metrics_json, SELECTED_GROUP, df_hourly_frequency, df_anomaly1):
 
-    # Retrieve the selected sensor group 
+    # Get sensor group 
     metric_groups = metrics_json["metric_groups"]
-    selected_metrics = metric_groups[SELECTED_GROUP]        # dict {code: label}
-    sensor_codes     = list(selected_metrics.keys())        # Selects the metrics identifier
+    selected_metrics = metric_groups[SELECTED_GROUP]
+    sensor_codes     = list(selected_metrics.keys())
     target_metrics = list(
         metrics_json["engine_labels"].keys()
     ) 
@@ -298,25 +298,25 @@ def run_group_and_join(metrics_json, SELECTED_GROUP, df_hourly_frequency, df_ano
     print(f"Correlating each engine against group '{SELECTED_GROUP}':")
     print(f"  Sensors: {sensor_codes}\n")
 
-    # Pivot the engine switches: one column per engine 
+    # Pivot engine switches
     df_engine_wide = (
         df_hourly_frequency
-        .filter(sf.col("metric").isin(target_metrics))         # Keep only the engines metrics
-        .groupBy("hour_bucket", "hwid")                     # Group data by device and hour bucket
-        .pivot("metric", target_metrics)                      # Creates a column for each engine metric (pivot)
-        .agg(sf.first("total_state_switches"))               # This is only intended to return a value instead of a column
+        .filter(sf.col("metric").isin(target_metrics))
+        .groupBy("hour_bucket", "hwid")
+        .pivot("metric", target_metrics)
+        .agg(sf.first("total_state_switches"))
     )
 
-    # Pivot the selected sensors: one column per sensor 
+    # Pivot sensor values
     df_sensors_wide = (
         df_anomaly1
-        .filter(sf.col("metric").isin(sensor_codes))     # Selects the group of metrics I want to correlate
+        .filter(sf.col("metric").isin(sensor_codes))
         .groupBy("hour_bucket", "hwid")
-        .pivot("metric", sensor_codes)       # Creates a column for each selected metric (pivot)
-        .agg(sf.avg("aggregated_value"))      # The metric value is calculated as an average (all continous)
+        .pivot("metric", sensor_codes)
+        .agg(sf.avg("aggregated_value"))
     )
 
-    # Join engine switches with sensor values 
+    # Join tables
     df_joined = df_engine_wide.join(
         df_sensors_wide,
         on=["hour_bucket", "hwid"],
@@ -327,14 +327,14 @@ def run_group_and_join(metrics_json, SELECTED_GROUP, df_hourly_frequency, df_ano
 
 def run_correlation(df_joined, sensor_codes, target_metrics):
 
-    # Contruct the pyspark correlation expressions. With the for cycles I can construct every possible combination 
+    # Build correlation expressions
     corr_exprs = []
     for eng in target_metrics:
         for s in sensor_codes:
             alias = f"corr_{eng}_vs_{s}"
             corr_exprs.append(sf.corr(eng, s).alias(alias))
 
-    # Apply the expressions
+    # Apply expressions
     df_correlation = df_joined.groupBy("hwid").agg(*corr_exprs)
 
     return df_correlation
@@ -425,7 +425,7 @@ def main():
                 "timestamp_bucket", sf.date_trunc("minute", "when")
             )
 
-            # Aggregate: mean for continuous metrics, max for discrete/status metrics
+            # Mean for continuous, max for discrete
             df_aggregated = (
                 df_spark.groupBy("timestamp_bucket", "hwid", "metric")
                 .agg(
@@ -487,7 +487,7 @@ def main():
         time.sleep(2)
 
     # --------------------------------------------------------------------------
-    # OPTIONAL: SHUFFLE PARTITIONS TUNING (AT MAX CORES = 6)
+    # SHUFFLE PARTITIONS TUNING (AT MAX CORES = 6)
     # --------------------------------------------------------------------------
     shuffle_records = []
     if args.shuffle_test and 6 in args.cores:
