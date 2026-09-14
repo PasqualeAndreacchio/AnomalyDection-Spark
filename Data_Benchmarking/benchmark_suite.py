@@ -131,6 +131,11 @@ def run_task1_is_overheated(df_spark):
 
     Note: df_spark is expected to already have the 'BitString' column (produced
     during the pre-benchmark setup, NOT benchmarked here).
+
+    The .filter(isNotNull) on the newly computed column prevents Catalyst's
+    Column Pruning rule from eliminating the withColumn projection entirely:
+    a plain .count() on BooleanType (never NULL) would let Catalyst drop the
+    column from the physical plan and skip the actual sf.substring computation.
     """
     df_out = df_spark.withColumn(
         "is_overheated",
@@ -140,7 +145,9 @@ def run_task1_is_overheated(df_spark):
             True
         ).otherwise(False)
     )
-    count = df_out.count()
+    # isNotNull forces Catalyst to retain the 'is_overheated' projection in the
+    # physical plan, ensuring the substring/bin/lpad work is actually executed.
+    count = df_out.filter(sf.col("is_overheated").isNotNull()).count()
     return count, df_out
 
 
@@ -150,6 +157,10 @@ def run_task2_timestamp_and_bucket(df_spark):
     ------------------------------------------------------------------
     Reproduces the cell that overwrites 'when' with a proper TimestampType
     via timestamp_millis() and adds 'timestamp_bucket' via date_trunc('minute').
+
+    The .filter(isNotNull) on 'timestamp_bucket' prevents Catalyst's Column
+    Pruning rule from discarding the timestamp_millis / date_trunc projection
+    when the downstream action is a plain count().
     """
     df_out = df_spark.withColumn(
         "when",
@@ -158,25 +169,38 @@ def run_task2_timestamp_and_bucket(df_spark):
         "timestamp_bucket",
         sf.date_trunc("minute", "when")
     )
-    count = df_out.count()
+    # isNotNull on 'timestamp_bucket' ensures the date_trunc (and the upstream
+    # timestamp_millis cast) are retained in the Catalyst physical plan.
+    count = df_out.filter(sf.col("timestamp_bucket").isNotNull()).count()
     return count, df_out
 
 
 def run_task3_device_flag(df_spark):
     """
-    Task 3 - Device-level is_overheated propagation  (Window / Skew-bound)
-    -----------------------------------------------------------------------
+    Task 3 - Device-level is_overheated propagation  (Window / Wide Dependency)
+    ---------------------------------------------------------------------------
     Reproduces the Window.partitionBy('timestamp_bucket', 'hwid') cell that
     propagates the is_overheated flag across all rows in the same device/bucket.
 
     Expects df_spark to have: 'timestamp_bucket', 'hwid', 'is_overheated'.
+
+    Window.partitionBy("timestamp_bucket", "hwid") is a WIDE dependency:
+    Spark must perform a Hash Shuffle Exchange to co-locate all rows sharing the
+    same (timestamp_bucket, hwid) pair on the same executor before it can compute
+    max(is_overheated) locally.  There is NO partition-local shortcut.
+
+    The .filter(isNotNull) on 'is_overheated_device' prevents Catalyst's Column
+    Pruning rule from eliminating the entire Window + ShuffleExchange from the
+    physical plan when the action is a plain count().
     """
     w_device = Window.partitionBy("timestamp_bucket", "hwid")
     df_out = df_spark.withColumn(
         "is_overheated_device",
         sf.max(sf.col("is_overheated")).over(w_device)
     )
-    count = df_out.count()
+    # isNotNull on 'is_overheated_device' forces Catalyst to retain the Window
+    # expression AND the upstream Hash Shuffle Exchange in the physical plan.
+    count = df_out.filter(sf.col("is_overheated_device").isNotNull()).count()
     return count, df_out
 
 
@@ -388,6 +412,12 @@ def main():
         print("    [Setup] Caching Task 3 output for Task 4 ...", flush=True)
         df_t3_cached = df_t3_result.cache()
         df_t3_cached.count()  # materialise
+        # Wait for the Spark REST API to flush the cache-materialisation stages
+        # before snapshotting the stage counter for Task 4.  Without this pause
+        # the cache-count stages may still be 'RUNNING' in the API response and
+        # get folded into Task 4's shuffle metrics, producing anomalously low
+        # shuffle_read_bytes (e.g. 708 B instead of ~807 MB).
+        time.sleep(1)
 
         # ------------------------------------------------------------------
         # TASK 4 - Metric aggregation (groupBy - Shuffle / Wide)
@@ -460,6 +490,7 @@ def main():
             df_t2_c = df_t2.cache(); df_t2_c.count()
             _, df_t3 = run_task3_device_flag(df_t2_c)
             df_t3_c = df_t3.cache(); df_t3_c.count()
+            time.sleep(1)  # allow REST API to flush cache stages before Task 4 snapshot
 
             start_stage = get_current_max_stage(app_id)
             t0 = time.perf_counter()
