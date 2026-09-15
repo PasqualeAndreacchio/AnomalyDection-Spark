@@ -425,6 +425,8 @@ def main():
                 "timestamp_bucket", sf.date_trunc("minute", "when")
             )
 
+            res = df_spark.count()
+            """
             # Mean for continuous, max for discrete
             df_aggregated = (
                 df_spark.groupBy("timestamp_bucket", "hwid", "metric")
@@ -454,6 +456,7 @@ def main():
                 df_joined, sensor_codes, target_metrics
             )
             res = df_correlation.count()
+            """
 
             t1 = time.perf_counter()
             wall_time = t1 - t0
@@ -563,9 +566,15 @@ def main():
     df_results = pd.DataFrame(benchmark_records)
     csv_path = os.path.join(output_dir, "benchmark_summary.csv")
     json_path = os.path.join(output_dir, "benchmark_results.json")
+    
+    # Exclude the first repetition (cold start) from the summary if multiple repeats were run
+    if args.repeats > 1:
+        df_for_summary = df_results[df_results["repeat"] > 1]
+    else:
+        df_for_summary = df_results
 
     # Group by task and cores to get mean and std
-    summary = df_results.groupby(["task_name", "task_category", "cores"]).agg({
+    summary = df_for_summary.groupby(["task_name", "task_category", "cores"]).agg({
         "wall_time_sec": ["mean", "std"],
         "cpu_time_sec": ["mean"],
         "gc_time_sec": ["mean"],
