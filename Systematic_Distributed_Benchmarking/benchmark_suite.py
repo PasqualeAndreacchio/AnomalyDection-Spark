@@ -425,8 +425,6 @@ def main():
                 "timestamp_bucket", sf.date_trunc("minute", "when")
             )
 
-            res = df_spark.count()
-            """
             # Mean for continuous, max for discrete
             df_aggregated = (
                 df_spark.groupBy("timestamp_bucket", "hwid", "metric")
@@ -456,7 +454,6 @@ def main():
                 df_joined, sensor_codes, target_metrics
             )
             res = df_correlation.count()
-            """
 
             t1 = time.perf_counter()
             wall_time = t1 - t0
