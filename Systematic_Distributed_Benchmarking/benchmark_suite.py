@@ -489,6 +489,7 @@ def main():
     # --------------------------------------------------------------------------
     # SHUFFLE PARTITIONS TUNING (AT MAX CORES = 6)
     # --------------------------------------------------------------------------
+    shuffle_records_raw = []
     shuffle_records = []
     if args.shuffle_test and 6 in args.cores:
         print("\n" + "=" * 80)
@@ -508,54 +509,80 @@ def main():
             except Exception as e:
                 print(f"    Warm-up error: {e}", flush=True)
 
-            # --- Full pipeline: Switch Counts → Group & Join → Correlation ---
-            start_stage = get_current_max_stage(app_id)
-            t0 = time.perf_counter()
+            # --- Run the full pipeline multiple times per partition config ---
+            for sr in range(args.repeats):
+                start_stage = get_current_max_stage(app_id)
+                t0 = time.perf_counter()
 
-            # Build df_aggregated for this session
-            df_spark_shuff = spark.read.parquet(s3_parquet_path)
-            df_spark_shuff = df_spark_shuff.withColumn(
-                "when", sf.timestamp_millis(sf.col("when").cast("long"))
-            ).withColumn(
-                "timestamp_bucket", sf.date_trunc("minute", "when")
-            )
-            df_agg_shuff = (
-                df_spark_shuff.groupBy("timestamp_bucket", "hwid", "metric")
-                .agg(
-                    sf.coalesce(
-                        sf.mean(sf.when(sf.col("metric").isin(continuous_metrics), sf.col("value"))),
-                        sf.max(sf.col("value"))
-                    ).alias("aggregated_value")
+                # Build df_aggregated for this session
+                df_spark_shuff = spark.read.parquet(s3_parquet_path)
+                df_spark_shuff = df_spark_shuff.withColumn(
+                    "when", sf.timestamp_millis(sf.col("when").cast("long"))
+                ).withColumn(
+                    "timestamp_bucket", sf.date_trunc("minute", "when")
                 )
-            )
+                df_agg_shuff = (
+                    df_spark_shuff.groupBy("timestamp_bucket", "hwid", "metric")
+                    .agg(
+                        sf.coalesce(
+                            sf.mean(sf.when(sf.col("metric").isin(continuous_metrics), sf.col("value"))),
+                            sf.max(sf.col("value"))
+                        ).alias("aggregated_value")
+                    )
+                )
 
-            df_anomaly1_sh, df_hourly_freq_sh = run_switch_counts(df_agg_shuff, target_metrics)
-            df_joined_sh, _, sensor_codes_sh = run_group_and_join(
-                metrics_json, SELECTED_GROUP, df_hourly_freq_sh, df_anomaly1_sh
-            )
-            df_corr_sh = run_correlation(df_joined_sh, sensor_codes_sh, target_metrics)
-            df_corr_sh.count()
+                df_anomaly1_sh, df_hourly_freq_sh = run_switch_counts(df_agg_shuff, target_metrics)
+                df_joined_sh, _, sensor_codes_sh = run_group_and_join(
+                    metrics_json, SELECTED_GROUP, df_hourly_freq_sh, df_anomaly1_sh
+                )
+                df_corr_sh = run_correlation(df_joined_sh, sensor_codes_sh, target_metrics)
+                df_corr_sh.count()
 
-            t1 = time.perf_counter()
-            wall_total = t1 - t0
-            metrics_all = get_stage_metrics(app_id, min_stage_id=start_stage)
-            print(f"    [Partitions={p} | Full Pipeline] Wall: {wall_total:.3f}s", flush=True)
+                t1 = time.perf_counter()
+                wall_total = t1 - t0
+                metrics_all = get_stage_metrics(app_id, min_stage_id=start_stage)
 
-            rec = {
-                "shuffle_partitions": p,
-                "wall_time_total": wall_total,
-                "cpu_time_sec": metrics_all["executorCpuTime_sec"],
-                "gc_time_sec": metrics_all["jvmGcTime_sec"],
-                "shuffle_read_bytes": metrics_all["shuffleReadBytes"],
-                "shuffle_write_bytes": metrics_all["shuffleWriteBytes"],
-                "num_tasks": metrics_all["numTasks"],
-            }
-            shuffle_records.append(rec)
-            print(f"    [ShufflePartitions: {p}] Wall: {rec['wall_time_total']:.3f}s | Tasks: {rec['num_tasks']} | ShuffRead: {rec['shuffle_read_bytes']/(1024**2):.1f}MB", flush=True)
+                rec_raw = {
+                    "shuffle_partitions": p,
+                    "repeat": sr + 1,
+                    "wall_time_total": wall_total,
+                    "cpu_time_sec": metrics_all["executorCpuTime_sec"],
+                    "gc_time_sec": metrics_all["jvmGcTime_sec"],
+                    "shuffle_read_bytes": metrics_all["shuffleReadBytes"],
+                    "shuffle_write_bytes": metrics_all["shuffleWriteBytes"],
+                    "num_tasks": metrics_all["numTasks"],
+                }
+                shuffle_records_raw.append(rec_raw)
+                print(
+                    f"    [Partitions={p} | Rep: {sr+1}] "
+                    f"Wall: {wall_total:.3f}s | Tasks: {rec_raw['num_tasks']} | "
+                    f"ShuffRead: {rec_raw['shuffle_read_bytes']/(1024**2):.1f}MB",
+                    flush=True,
+                )
 
             # Clean up
             spark.stop()
             time.sleep(2)
+
+        # Aggregate shuffle tuning results, excluding the cold-start repetition
+        df_shuff_raw = pd.DataFrame(shuffle_records_raw)
+        if args.repeats > 1:
+            df_shuff_warm = df_shuff_raw[df_shuff_raw["repeat"] > 1]
+        else:
+            df_shuff_warm = df_shuff_raw
+
+        for p in partition_options:
+            subset = df_shuff_warm[df_shuff_warm["shuffle_partitions"] == p]
+            rec = {
+                "shuffle_partitions": p,
+                "wall_time_total": subset["wall_time_total"].mean(),
+                "cpu_time_sec": subset["cpu_time_sec"].mean(),
+                "gc_time_sec": subset["gc_time_sec"].mean(),
+                "shuffle_read_bytes": int(subset["shuffle_read_bytes"].mean()),
+                "shuffle_write_bytes": int(subset["shuffle_write_bytes"].mean()),
+                "num_tasks": int(subset["num_tasks"].mean()),
+            }
+            shuffle_records.append(rec)
 
     # ==========================================================================
     # DATA AGGREGATION, SPEEDUP & EFFICIENCY COMPUTATION
@@ -600,7 +627,8 @@ def main():
         json.dump({
             "raw_records": benchmark_records,
             "summary": summary.to_dict(orient="records"),
-            "shuffle_tuning": shuffle_records
+            "shuffle_tuning": shuffle_records,
+            "shuffle_tuning_raw": shuffle_records_raw
         }, f, indent=2, default=str)
 
     print("\n" + "=" * 80)
